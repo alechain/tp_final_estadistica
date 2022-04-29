@@ -1,0 +1,78 @@
+---
+title: "clase_01"
+output: html_document
+---
+<br> <br/>
+Instalamos librerías
+```{r}
+librerias<- c("ggplot2", "ggrepel", "plotly",
+              "lubridate", "htmlwidgets" , "RColorBrewer",
+              "sqldf", "data.table", "readr" ) 
+
+for (i in librerias){
+     library(i, character.only=TRUE)
+      end
+      }
+ 
+```
+```{r}
+URL <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+url_archivo  <- paste(URL,"time_series_covid19_confirmed_global.csv", sep = "")
+temp<- tempfile()
+download.file(url_archivo,temp)
+datos<-read.csv(url_archivo,header=TRUE,sep=',')
+datos
+
+```
+```{r}
+datos<-datos %>% select(-c('Province.State','Lat','Long'))
+datos<-pivot_longer(datos,-c('Country.Region'))
+colnames(datos)<-c(  "pais", "date", "confirmados")
+datos$date<-as.Date(datos$date,format = 'X%m.%d.%y')
+datos
+```
+```{r}
+
+datos_totales<- datos %>% group_by(date) %>% summarise(confirmados=formattable::accounting(sum(confirmados),digits = 0))
+ggplotly(
+datos_totales %>% ggplot(mapping=aes(x=date,y=confirmados)) + geom_point() + scale_x_date(labels = scales::date_format("%b-%Y"),breaks = scales::date_breaks(width = '1 month'),limits = c(as_date(min(datos_totales$date)),as_date(max(datos_totales$date))))+
+                                            scale_y_continuous(labels = scales::comma_format()) + theme(axis.text.x = element_text(angle = 90))
+
+,tooltip = c('confirmados') ,
+      
+)
+
+datos
+```
+
+```{r}
+datos_totales$'confirmados(millones)'<- datos_totales$confirmados/1000000
+datos_totales
+g1 <- ggplot(datos_totales ,aes(x = date, y = datos_totales$'confirmados(millones)')) +
+  
+  geom_point( size=1, color="blue") +
+  
+  ggtitle("**COVID_19 - confirmados confirmados a nivel mundial**") +
+  scale_x_date(date_breaks = "14 day", date_labels =  "%d %b") +
+##scale_y_continuous(limits = c(0, 100), breaks = seq(1, 5, 1)) +
+  theme(plot.title = element_text(lineheight = 1,face ='bold'),plot.title.position = element_rect())   +
+  ylab("cantidad de confirmados en M") +
+  xlab("") +
+  labs(caption = "\nFuente: The Johns Hopkins University Center for Systems Science and Engineering (JHU CSSE)") +
+  theme_minimal() +
+  
+  theme(axis.text.x = element_text(size=8,vjust=0.5,angle=90), text = element_text(), plot.title = element_markdown(size = 14), plot.title.position = "plot",plot.subtitle = element_markdown(size = 10), axis.title = element_text(size=10), legend.position = "bottom", legend.text = element_text(size = 5), legend.title = element_blank(),plot.caption = element_markdown(size=8,hjust = 0),axis.line.y = element_line("BLACK"), axis.ticks.x = element_blank(), axis.text = element_text(colour = "BLACK", size = 7), panel.background = element_blank(), panel.grid.major = element_blank())
+  
+
+g1
+```
+
+
+```{r}
+ggplotly(g1)
+```
+
+
+
+
+
