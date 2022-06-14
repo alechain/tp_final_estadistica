@@ -1,0 +1,86 @@
+---
+title: "practica_1_estadistica"
+output: html_document
+---
+
+```{r echo=FALSE}
+library(tidyverse)
+library(stargazer)
+library(kableExtra)
+```
+
+1.  Los siguientes datos corresponden al salario de bolsillo en pesos (\$) de los empleados de una determinada empresa: 600 650 700 800 1200 500 680 1500 1400 1500 700 600 2000 3500 600 700 800 750 1000 1000 600 600 900 850 1500 600 600 700 800 1000
+
+-   Hallar la media aritmética, varianza y desvío estándar muestral. Determinar en cada caso las unidades en que se expresa cada medida.
+
+La media aritmética de una variable $X$ es una medida de tendencia central que está determinada por la siguiente función $\overline{X}$:
+
+$\overline{X}=\sum\nolimits_{i=1}^n\frac{X_i*f_i}{n}$
+
+Para esto primero armamos una tabla de frecuencias, para ello tenemos que ordenar los salarios de menor a mayor y hacer un conteo de los valores únicos de cada uno de los salarios de los empleados:
+
+```{r}
+#Creamos vector con salario
+salarios<- c(600, 650, 700 ,800, 1200, 500 ,680 ,1500 ,1400 ,1500 ,700 ,600 ,2000 ,3500 ,600 ,700, 800, 750 ,1000, 1000, 600 ,600 ,900, 850 ,1500 ,600 ,600 ,700 ,800 ,1000)
+#Creamos un dataframe con el vector
+salarios<- tibble::tibble(salarios)
+#Ordenamos de menor a mayor (redundante porque el group_by posterior ya lo ordena pero lo hacemos igual a modo didactico)
+salarios<- salarios %>% arrange(salarios)
+#Contamos la frecuencia de cada uno de los salarios en la muestra
+tabla_1<-salarios %>% group_by(salarios) %>% summarise(fi=n())
+rownames(tabla_1)<- NULL
+tabla_1<- tabla_1 %>% mutate('fi*Xi'=salarios*fi)
+# Multiplicamos el $X_{i}$ (la variable "salario" del DF) por su frecuencia $f_{i}$:
+tabla_1%>% kbl(row.names = NA, align='c') %>% kable_paper(c('striped','hoover','responsive'))
+```
+
+Una vez que tenemos todos estos datos podemos calcular el salario medio medido en pesos $\overline{X}=\sum\nolimits_{i=1}^n\frac{X_i*f_i}{n}$= `r sum(tabla_1$'fi*Xi')/sum(tabla_1$fi)`
+
+O simplemente podemos realizar...
+
+```{r}
+mean(salarios$salarios)
+```
+
+En resumen, el salario medio es de \$ `r mean(salarios$salarios)`
+
+-   Obtener la mediana y el modo.
+
+La mediana y el modo son otras medidas de tendencia central. La mediana indica cual es el valor de la variable $X_i$ de la distribución que se encuentra en la mitad de los datos, mientras que el modo es el valor de la variable que se repite con mayor frecuencia.
+
+La media la vamos a indicar con $Me(X)$ mientras que el modo va a estar representado por $Mo(X)$.
+
+En el caso de esta distribución de salarios, podemos ver la Moda y el Modo calculando en la misma tabla la frecuencia relativa $fr_i$ y la frecuencia absoluta $Fr_i$:
+
+```{r}
+tabla_1<- tabla_1 %>%  mutate(Fi=cumsum(fi),fri=formattable::percent(fi/sum(fi),2), Fri=formattable::percent(cumsum(fi)/sum(fi),2)) 
+tabla_1 %>% kbl(row.names = NA, align='c') %>% kable_paper(c('striped','hoover','responsive'))  %>% column_spec(2, color = "white",
+              background = spec_color(tabla_1$fi , end = 0.5, option = "B", direction = -1)) %>%  column_spec(5, color = "white",
+              background = spec_color(tabla_1$fri , end = 0.5, option = "C", direction = -1)) %>%   column_spec(6, color = "white",
+              background = spec_color(tabla_1$Fri , end = 0.5, option = "D", direction = -1))
+```
+
+En este caso, la cantidad de observaciones es igual a $n=30$, en donde el $OAM=\frac{n}{2}=15$, por ende, como la Frecuencia Absoluta Acumulda $Fi$ coincide con el $OAM$ la $Me(X)$ se debe calcular como $\frac{750+800}{2}$=`r (750+800)/2` . Con lo que se concluye que el salario mediano de esta muestra es igual a \$ `r (750+800)/2`.
+
+Por otro lado, la moda de esta muestra está definida por el salario igual a \$600, debido a que es el que con mayor frecuencia $fi$ se repite en la muestra de salarios ($fi=7$).
+
+-   Hallar el rango, los cuartiles y la distancia intercuartil. El rango de esta distribución de salarios está dado por el intervalo entre el menor valor y el mayor valor de la muestra. En este caso el rango es igual a `r max(salarios$salarios)- min(salarios$salarios)` (3500-500) y da una idea de la dispersión de los datos en términos absolutos, es decir, que entre el menor salario de la distribución y el mayor salario de la distribución hay una diferencia de \$3000.
+
+Los cuartiles de la distribución están dados por:
+
+*Primer cuartil:* El primer cuartil es aquel valor del salario que no supera el 25% de la distribución de los datos,en este caso se saca calculando el OAP= `r (25*30)/100`
+
+-   
+
+d\) Complete la siguiente frase: "El 75% de los empleados gana más de .....". Justifique.
+
+
+
+
+```{r}
+acciones<- c(27,9 ,11,6 ,17,6 ,18,5, 26,6 ,20,7 ,15,6, 12,4, 13,2, 22,4,18,5, 16,8, 22,9, 24,3, 18,6, 25,0, 24,2, 15,3 ,21,5 ,18,4)
+acciones<- tibble(acciones)
+tabla_2<-acciones %>% group_by(acciones) %>% summarise(fi=n())
+tabla_2<-tabla_2 %>% mutate(Fi=cumsum(fi))
+```
+

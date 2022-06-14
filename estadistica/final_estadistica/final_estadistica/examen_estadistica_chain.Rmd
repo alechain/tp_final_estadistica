@@ -1,0 +1,197 @@
+---
+title: "Examen Estadistica"
+author: "Alejandro Chain"
+date: "6/3/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source('funciones.R')
+library(tidyverse)
+library(readr)
+library(tidyverse)
+library(factoextra)
+library(stargazer)
+library(xtable)
+library(extrafont)
+library(eph)
+library(readxl)
+library(formattable)
+library(eph)
+library(modeest)
+library(kableExtra)
+library(rriskDistributions)
+library(ggtext)
+```
+
+-   Suponga que en una cierta prueba de hipótesis, el P-Value resultó ser menor que el nivel de significación. Esto implica que:
+
+La hipotesis alternativa no se rechaza, la prueba de hipotesis SIEMPRE es sobre la hipótesis NULA, por eso la opcion es ninguna de las anteriores.
+
+-   En el último año: 10% fueron críticos, 30% fueron serios, el resto fue estable. El 40% de los críticos murieron, 10% de los serios murieron, 1% de los estables murieron. 
+
+Lo que se debe calcular es la P(Serio | Sobrevivio), esto se puede resolver mediante el teorema de bayes planteando:
+P(Serio | Sobrevivio)= (p(sobrevivio|serio)*p(serio))/p(sobrevivio)
+```{r}
+p_sobrevivir_serio<- (1-0.10)
+p_sobrevivir_critico<- (1-0.40)
+p_sobrevivir_estable<- (1-0.01)
+p_serio<-0.30
+p_sobrevivir<-(0.30*p_sobrevivir_serio)+(0.10*p_sobrevivir_critico)+(0.6*p_sobrevivir_estable)
+
+p_serio_sobrevivio<-(p_sobrevivir_serio*p_serio)/p_sobrevivir
+p_serio_sobrevivio
+```
+
+Con lo que se puede concluir que la probabilidad de que el paciente haya sido catalogado como serio al llegar dado que sobrevivió es del 29.22%.
+
+
+-   Según los registros de una biblioteca pública, la cantidad diaria de libros consultados en su sala de lectura en los últimos 9 días fue:  103	124	89	76	132	94	115	99	100. Determinar el modo y la mediana de estos datos.
+```{r}
+libros<-c(103,	124,	89,	76,	132	,94	,115,	99	,100)
+median(libros)
+sort(libros)
+
+
+```
+La mediana de las consultas de los libros es igual a 100 consultas por día en la sala de lectura. Por otro lado, esta distribución no posee Modo, debido a que no hay un valor que tenga una mayor frecuencia de repetición que otro, todos tiene la misma.
+
+-   En este curso de Estadística de la Austral se ha decidido aprobar a aquellos que superen uno de los dos parciales. Con este criterio aprobó el 60%. Sabiendo que el primer parcial lo superó el 50% y el segundo el 40% ¿Cuál hubiese sido el porcentaje de aprobados, si se hubiese exigido aprobar ambos parciales?
+
+Si aprobo el 60% , los conjuntos de aprobados del primer parcial y del segundo parcial comparten una union de alumnos que aprobaron ambos parciales igual al 30%. Debido a que si hubiesen sido todos alumnos distintos los que aprobaron el primer y el segundo parcial, hubiesen aprobado un 90% con el método de solo un parcial aprobado. Entonces queda como 50% aprobo el primero + 40% aprobo el segundo -  (aprobo el primero y el segundo (30%)). Para llegar al total del 60% aprobado por el primer metodo (con una inclusión "o"), se debe restar la union entre el conjunto que aprobo el primer parcial con el conjunto que aprobo el segundo para no contabilizarlo dos veces.
+
+
+
+-   Se realizó una encuesta sobre hábitos televisivos durante el año pasado y se sacaron las siguientes conclusiones:  52% vio gimnasia, 21% vio tenis, 30% vio fútbol, 14% vio gimnasia y tenis, 6% vio tenis y fútbol, 14% vio gimnasia y fútbol, 5% vio los tres deportes. ¿Cuál es el porcentaje de personas que vio alguno de los deportes durante el último año?
+
+```{r}
+52+21+30-14-6-14-5
+```
+
+En total, el 64% de las personas vio alguno de los deportes en el ultimo año, porque hay que quitar las intersecciones entre los conjuntos que vieron más de un deporte.
+
+
+-   El ritmo cardíaco en reposo de un caballo adulto se distribuye de forma normal y promedia los 46 latidos por minutos con un desvío estándar de 8 latidos por minutos. Un caballo cuyo ritmo cardíaco se encuentra en el 10% superior de la distribución de ritmo cardíaco puede tener una infección secundaria o una enfermedad que requiere de tratamiento. ¿Cuán rápido debe latir el corazón de un caballo para estar dentro del grupo de riesgo?
+
+```{r}
+media=46
+ds=8
+qnorm(0.90, mean=media,sd=ds)
+
+
+```
+Para que el caballo se encuentre en el 10% superior de la distribución de ritmo cardíaco, siendo que sigue una distribución normal con los parámetros definidos anteriormente, debe tener una frecuencia de  latidos por minuto igual o mayor a 56 latidos por minuto. Si el caballo tiene una frecuencia igual a superior a  56 latidos por minuto ya entraría en el grupo de riesgo más propenso a tener una infección secundaria o una enfermedad que requiere de tratamiento.
+
+
+-   Una inversora está analizando invertir en una acción que tuvo el siguiente desempeño histórico: Año 2016: Rendimiento Anual 42%. Año 2017: Rendimiento Anual 35%. Año 2018: Rendimiento Anual -15%. ¿Cuál es el rendimiento promedio anual equivalente
+Para este punto es necesario utilizar el concepto de media geométrica.
+```{r}
+ library(psych)
+rendimientos<-c(1.42,1.35,0.85)
+
+ rendimiento_promedio_anual<-geometric.mean(rendimientos)-1
+rendimiento_promedio_anual
+```
+
+
+-   La probabilidad de que una mujer de 40 años tenga cáncer de mama es alrededor de un 1 por ciento. Si efectivamente tuviera cáncer de mama, las chances de que la mamografía resulte positiva es un 90 por ciento. Por otro lado, si la paciente no tiene cáncer de mama, las posibilidades de que la mamografía sea positiva, igualmente, es de un 9 por ciento. Si una mujer de 40 años tiene en sus manos una mamografía con resultado positivo, ¿Cuáles son las chances de que efectivamente tenga cáncer de mama?
+
+Este caso es similar al caso del hospital y la clasificacion de los resultados. Para resolverlo es necesario usar el teorema de bayes. P(cancer|positivo)=p(positivo|cancer)*p(cancer) / p(positivo)
+
+```{r}
+positivo_dado_cancer<- 0.90
+positivo_dado_no_cancer<- 0.09
+p_cancer<- 0.01
+p_no_cancer<- (1-p_cancer)
+
+p_positivo<- (p_cancer*positivo_dado_cancer)+(p_no_cancer*positivo_dado_no_cancer)
+
+probabilidad_cancer_dado_positivo<- (positivo_dado_cancer*p_cancer)/p_positivo
+
+```
+Ergo, resulta del análisis  si una mujer de 40 años tiene en sus manos una mamografía con resultado positivo, la probabilidad de que efectivamente tenga cancer de mamas es del 9.18% (redondeando). Esto se debe a que en estos casos es mucho más peligroso un Falso Negativo que un Falso Positivo, por ello en estos test la probabilidad de efectivamente tener cancer de mamas si el resultado del test es positivo no es tan alta (a pesar de que es más alta que la a priori que es del 1%, por ello ya brinda una mayor información). Si se quisiese descartat un Falso Positivo se podría ir con test y exámenes más complejos y costosos.
+
+
+
+
+-   Se presentan las notas del final (sobre 25 puntos) de los estudiantes de este curso de Estadística (n = 40).c(19,19,20,20,22,20,17,19,20,19,14,21,21,12,17,23,17,23,16,22,22,22,17,18,13,14,20,19,23,20,23,21,0,24,23,21,19,22,20,21)   (a)	Resumir estos datos gráficamente y describir la distribución de los resultados del final. Definir la variable que estudia. (b)	¿Preferiría utilizar los 5 números de resumen o la media y la desviación estándar para describir numéricamente estos datos?. Calcule la(s) medida(s) que eligió. (c) Se observó que el puntaje 0 corresponde a un estudiante que no realizó el parcial por haberse contagiado de COVID-19. ¿Será apropiado sacar dicho valor?. Explicar como cambian las medidas descriptivas.
+*
+
+```{r}
+notas<-c(19,19,20,20,22,20,17,19,20,19,14,21,21,12,17,23,17,23,16,22,22,22,17,18,13,14,20,19,23,20,23,21,0,24,23,21,19,22,20,21)
+
+notas<-tibble('notas'=notas)
+notas
+
+mean(notas$notas)
+
+#Gráfico de distribución de notas
+notas %>% ggplot(mapping=aes(x=notas)) +geom_histogram() + xlab('Notas de alumnos') + ylab('Cantidad Alumnos')+ labs(title='Distribución de las notas del Examen de estadística') + geom_vline(xintercept = mean(notas$notas))+ geom_richtext(aes(x = 19, y = 5,
+                    label = 'Nota promedio: 19.07'),
+                angle = 90)+ theme_bw() 
+
+# Minimo, máximo. Mediana, media , primer cuartil y tercer cuartil
+summary(notas$notas)
+
+
+
+#Rango intercuartil
+22.00 -17.75
+#Tabla de distribución
+notas %>% group_by(notas) %>%  summarise('Cantidad de alumnos'=n()) %>% arrange(notas)
+
+# Desvio estandat
+sqrt(var(notas$notas))
+#Moda
+mfv(notas$notas)
+
+``` 
+
+Si eliminamos al alumno que scoreo 0 por enfermedad
+```{r}
+
+notas_sin<- notas %>% filter(notas!=0)
+summary(notas_sin$notas)
+
+mean(notas_sin$notas)
+
+#Rango intercuartil
+22.00 -17.75
+#Tabla de distribución
+notas_sin %>% group_by(notas) %>%  summarise('Cantidad de alumnos'=n()) %>% arrange(notas)
+
+# Desvio estandat
+sqrt(var(notas_sin$notas))
+
+#Gráfico de distribución de notas
+notas_sin %>% ggplot(mapping=aes(x=notas)) +geom_histogram() + xlab('Notas de alumnos') + ylab('Cantidad Alumnos')+ labs(title='Distribución de las notas del Examen de estadística') + geom_vline(xintercept = mean(notas$notas))+ geom_richtext(aes(x = 19.4, y = 5,
+                    label = 'Nota promedio: 19.56'),
+                angle = 90)+ theme_bw() 
+#Moda
+mfv(notas_sin$notas)
+```
+
+
+
+-   En el famoso juego televisivo “Trato Hecho” (Deal or No Deal) se poseen 26 maletines con distintas sumas de dinero. Se elige un concursante de la tribuna, quien debe elegir 1 de los maletines disponibles sin saber con antelación que dinero hay en cada valija. El juego se realiza en distintas rondas donde el participante debe elegir una serie de maletines y al descubrir los verdaderos montos, la banca ofrece una suma de dinero para que el concursante desista del juego y se lleve dicha suma. En la versión Argentina, las sumas de dinero en juego son: c(1, 5, 10, 25, 50, 100, 250, 500, 1000, 2000, 3000, 4000, 5000, 10000, 25000, 50000, 75000, 100000, 200000, 300000, 400000, 500000, 750000, 1000000, 1500000, 2000000). En la primera ronda el (la) participante debe seleccionar maletines para descubrir los verdaderos valores, suponga que el primero que selecciona posee el monto más alto, ¿Cuál es la probabilidad de que la ganancia que obtenga sea mayor a la esperada?.
+
+```{r}
+montos<-c(1, 5, 10, 25, 50, 100, 250, 500, 1000, 2000, 3000, 4000, 5000, 10000, 25000, 50000, 75000, 100000, 200000, 300000, 400000, 500000, 750000, 1000000, 1500000, 2000000)
+
+montos_sin<-c(1, 5, 10, 25, 50, 100, 250, 500, 1000, 2000, 3000, 4000, 5000, 10000, 25000, 50000, 75000, 100000, 200000, 300000, 400000, 500000, 750000, 1000000, 1500000)
+p=(1/length(montos_sin))
+
+prob<-rep(1/25,25)
+prob
+
+esperanza<-(montos_sin %*% prob)
+montos_mayores<-montos_sin[montos_sin>197037.6]
+
+cantidad_mayores<- length(montos_mayores)
+#Probabilidad  de obtener 
+cantidad_mayores/26
+
+
+```
+

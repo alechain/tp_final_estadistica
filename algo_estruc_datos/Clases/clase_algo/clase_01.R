@@ -63,15 +63,15 @@ class(v10)
 # https://www.r-bloggers.com/2021/09/r-for-loop/
 # vector of numbers
 num = c(2, 3, 12, 14, 5, 19, 23, 64)
-
+num
 # variable to store the count of even numbers
-count = 0
+count =0
 
 # for loop to count even numbers
 for (i in num) {
   # check if i is even
   if (i %% 2 == 0) {
-    count = count + 1
+      count = count + 1
   }
 }
 
@@ -88,6 +88,8 @@ if (x > 0) {
 } else {
   print("x is a negative number")
 }  
+
+
 ###
 # fubciones
 # https://www.r-bloggers.com/2021/09/r-ifelse-function/

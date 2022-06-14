@@ -1,0 +1,1532 @@
+---
+title: Trabajo final de Estadística
+author: Chain Alejandro
+date: 13 de junio de 2022
+output:
+
+  bookdown::pdf_document2:  
+  includes:
+    before_body: header.tex
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+  
+header-includes: 
+  \usepackage[spanish]{babel}
+  \usepackage{tikz}
+  \usepackage[babel]{csquotes}
+  \renewcommand{\baselinestretch}{1.2}
+  \setlength{\parskip}{2mm}
+  \usepackage{makeidx}
+
+fontsize: 11pt
+indent: no
+bibliography: references.bib
+csl: apa.csl
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+\maketitle
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dev="cairo_pdf", fig.cap = FALSE,warning = FALSE,error = FALSE)
+library(readr)
+library(tidyverse)
+library(factoextra)
+library(stargazer)
+library(xtable)
+library(extrafont)
+library(eph)
+library(readxl)
+library(formattable)
+library(eph)
+library(modeest)
+library(kableExtra)
+library(e1071)
+
+#paleta de colores
+color<- c('#e41a1c','#377eb8','#4daf4a','#a6cee3','#4575b4','#f781bf','#a65628','#ffff33','#984ea3','#ff7f00','#f781bf')
+extrafont::font_import(prompt = FALSE)
+extrafont::loadfonts(device = "pdf",quiet = T)
+```
+\newpage
+# Introducción
+
+El presente trabajo práctico se encuadra dentro del programa de la matería de Estadística de la maestría en Ciencia de Datos de la Facultad de Ingeniería de la Universidad Austral.
+El objetivo de este trabajo es la aplicación de los conceptos teóricos y prácticos desarrollados durante la cursada de la materia.
+
+# Ejercicio Nº1 - Estadística Descriptiva
+
+Para el abordaje de este punto se utiliza como base de datos a la Encuesta Permanente de Hogares a nivel de individuos correspondiente al cuarto trimestre de 2021, esta encuesta es relevada por el instituto de estadísticas y Censo (INDEC), tiene una frecuencia trimestral y cubre 31 aglomerados urbanos y un área urbano-rural.
+
+Para la descarga de esta base de datos se emplea la biblioteca de EPH [@kozlowski2020].
+La población que se tomará en cuenta serán todos los individuos encuestados que se encuentren con una condición de actividad de "Ocupados" y que hayan declarado haber recibido algun tipo de ingreso laboral.
+En total, esta población consta de 17,243 individuos de los cuales se tomará una muestra de 1.000 individuos de manera aleatoria, sin reposición y asignandole a cada individuo de la población la misma probabilidad de ser seleccionado (distribución uniforme de probabilidad).
+
+```{r include=FALSE, echo=FALSE, warning=FALSE, error=FALSE, results='hide'}
+# En primer lugar se descargan los microdatos de la EPH a nivel individual del cuarto trimestre de 2021, considerando solamente algunas variables de interés.
+baseeph<-  get_microdata(year = 2021,trimester = 4,type = 'individual',vars =c('CODUSU','NRO_HOGAR','REGION','AGLOMERADO','CH04','CH14','CH12', 'CH13','CH06','PP04D_COD','P21','P47T','IPCF','PP08J1','PP04D_COD','ESTADO','PP3E_TOT','PP3F_TOT','NIVEL_ED','CH03'))
+# En segundo lugar, se realiza un filtrado por condición de "No respuesta" y se efectua un "Feature Engineering" básico mediante el cual se generan nuevas variables.
+baseeph <- baseeph %>%filter(ESTADO!=0)  %>%    mutate(
+                      Sexo=as.character(CH04),
+                      Sexo=case_when(Sexo=="1" ~ "Hombres",
+                                       Sexo=="2" ~ "Mujeres"),
+                      CH14=as.numeric(CH14),
+                      añoalc=case_when(CH14 %in% c(98,99)~ NaN ,
+                                           TRUE ~ CH14),
+                      aeduc=case_when(CH12==1 ~ 0,
+                                              CH12==2 & CH13==2~añoalc,
+                                              CH12==2 & CH13==1 ~ 6,
+                                              CH12==3 & CH13==2 ~ añoalc,
+                                              CH12==3 & CH13==1 ~ 9,
+                                              CH12==4 & CH13==2 ~ 6+añoalc,
+                                              CH12==4 & CH13==1 ~ 12,
+                                              CH12==5 & CH13==2 ~ 9+añoalc,
+                                              CH12==5 & CH13==1 ~ 12,
+                                              CH12 %in% c(6,7) & CH13==2 ~ 12+añoalc,
+                                              CH12==6 & CH13==1 ~ 16,
+                                              CH12==7 & CH13==1 ~ 17,
+                                              CH12==8 & CH13==2 ~ 17+añoalc,
+                                              CH12==8 & CH13==1 ~ 21),
+                       edad=case_when(CH06>=18 & CH06<29 ~ "18 a 28",
+                                     CH06>=29 & CH06<40 ~ "29 a 39",
+                                     CH06>=40 & CH06<51 ~ "40 a 50",
+                                     CH06>=51 & CH06<62 ~ "51 a 61",
+                                     CH06>=61 ~ "61+"),
+                        PP04D_COD = case_when(nchar(PP04D_COD) == 5 ~ PP04D_COD,
+                                              nchar(PP04D_COD) == 4 ~ paste0("0", PP04D_COD),
+                                              nchar(PP04D_COD) == 3 ~ paste0("00", PP04D_COD),
+                                              nchar(PP04D_COD) == 2 ~ paste0("000", PP04D_COD),
+                                              nchar(PP04D_COD) == 1 ~ paste0("0000", PP04D_COD)),
+                        CALIFICACION = substr(PP04D_COD, 5, 5),
+                      P21= P21 - PP08J1,
+                      
+                        JERARQUIA = substr(PP04D_COD, 3, 3),
+                        JERARQUIA = case_when(JERARQUIA=="0" ~ "Dirección",
+                                              JERARQUIA=="2" ~ "Jefes",
+                                              JERARQUIA=="1" ~ "Cuentapropia",
+                                              JERARQUIA=="3" ~ "Trabajadores\nAsalariados"),
+                        JERARQUIA = factor(JERARQUIA, c("Dirección", "Jefes", "Trabajadores\nAsalariados", "Cuentapropia")),
+                        PEA= case_when(ESTADO==3 ~ 0,
+                                       ESTADO==4 ~ 0,
+                                       ESTADO==1 ~ 1,
+                                       ESTADO==2 ~ 1),
+                        PP04D_COD = as.character(PP04D_COD),
+    
+                        CALIFICACION = case_when(CALIFICACION=="1" ~ "Profesionales",
+                                                   CALIFICACION=="2" ~ "Técnicos",
+                                                   CALIFICACION=="3" ~ "Operativos",
+                                                   CALIFICACION=="4" ~ "No Calificados",
+                                                    TRUE ~ "No Calificados" ),
+                        CALIFICACION = factor(CALIFICACION, c("No Calificados", "Operativos", "Técnicos", "Profesionales")),
+                          HORASSEM=PP3E_TOT,
+                          niveled=case_when(NIVEL_ED==1 | NIVEL_ED==7 ~ "Sin\ninstrucción",
+                                            NIVEL_ED %in% c(2,3) ~ "Primario\nCompleto",
+                                            NIVEL_ED %in% c(4,5)~ "Secundario\nCompleto",
+                                            NIVEL_ED == 6 ~ "Superior/Universitario\ncompleto"),
+                          niveled=factor(niveled, levels = c("Sin\ninstrucción","Primario\nCompleto","Secundario\nCompleto","Superior/Universitario\ncompleto")),
+                        JEFE = case_when(CH03==1 ~ 1,
+                                         CH03 %in% c(2,3,4,5,6,7,8,9,10) ~ 0))
+```
+
+```{r include=FALSE, echo=FALSE, warning=FALSE, error=FALSE, results='hide'}
+# En este bloque se filtra de toda la encuesta a los individuos que poseen una condición de "Ocupados" y que declararon haber recibido algún tipo de ingreso laboral, por último se seleccionan las variables que se van a utilizar en el posterior análisis.
+baseeph<-baseeph %>% 
+         filter(ESTADO==1 & !(P21 %in%c(-9,0)) & P47T!=-9) %>% 
+         mutate(ID = row_number())  %>% 
+         select(ID,edad=CH06,sexo=Sexo,horas_trabajo_semanal=HORASSEM,calificacion=CALIFICACION,nivel_educativo=niveled,ingreso_total=P47T)
+```
+
+```{r include=FALSE, echo=FALSE, warning=FALSE, error=FALSE, results='hide'}
+# Para la selección de la muestra de 1,000 individuos, se realiza un sampleo de tamaño n=1,000 de una distribución uniforme discreta con un rango  [1,17243], el cual coincide con el rango de la variable "ID" que identifica a los individuos de la población.
+set.seed(118)
+indice_aleatorio<- rdunif(n=1000, min(baseeph$ID),max(baseeph$ID))
+muestra<- baseeph[indice_aleatorio,]
+```
+
+Las variables que se tienen en cuenta para este análisis son tanto del tipo cuantitativo como cualitativo, a continuación se realiza una breve descripción de las mismas.
+
+**Variables Cualitativas:**
+
+-   Sexo: Esta variable indica si el individuo es Hombre o Mujer.
+
+-   Calificación: Esta variable indica el nivel de calificación del individuo, esta variable puede ser "No calificados", "Operativos", "Técnicos" o "Profesionales".
+
+-   Nivel educativo: Esta variable indica el nivel educativo alcanzado por el individuo, este puede ser "Sin instrucción", "Primario Completo", "Secundario Completo" o "Superior Universitario Completo",
+
+**Variables Cuantitativas:**
+
+-   Edad: Esta variable numérica discreta indica la edad del individuo al momento del relevamiento.
+
+-   Horas de trabajo semanal: Esta variable numérica indica la cantidad de horas semanales que trabajo el individuo en su ocupación laboral principal.
+
+-   Ingreso total: Esta variable numérica discreta indica el ingreso total mensual en pesos que recibió la persona, este está compuesto por el ingreso laboral proveniente del desarrollo de su ocupación sumado a los ingresos no laborales percibidos.
+
+Para realizar un análisis estadístico descriptivo desde un enfoque general de la muestra se pueden analizar tanto medidas de tendencia central, de variabilidad, de sesgo y de curtósis [@chao_estadisticas_1993] de las variables cuantitativas de los individuos muestreados.
+
+## Medidas de tendencia central
+
+Una medida de tendencia central es aquel número que se toma como orientación para referirnos a un conjuto de datos.
+Dentro de las medidas de tendencia central, también conocidas como medidas de posición, se pueden encontrar:
+
+-   La Media aritmética \@ref(eq:mean), esta medida de posición es la que cuenta con mayor popularidad, esta medida calcula el centro físico del conjunto de datos y esta definida como la suma de los valores observados de una variable dividido por el total de observaciones.
+
+\begin{equation}
+  \bar{X}=\frac{\sum_{i=1}^{n} X_i}{n} 
+  (\#eq:mean)
+\end{equation}
+
+-   La Mediana \@ref(eq:median), esta medida de posición indica el valor que divide un conjunto de observaciones ordenadas respecto de la magnitud de los valores, de tal manera que el número de datos por encima de la mediana sea igual al número de datos por debajo de la misma.
+
+\begin{equation}
+   X_m=\left\{\begin{matrix}X_{(\frac{n+1}{2})} \: \: \: \: \: \:\: \: \: \:\: \:\: \:\: \:\text{si     n es un numero impar}
+    &  \\
+    &  \\
+    \frac{X_{(\frac{n}{2})}+X_{(\frac{n}{2})+1}}{2}\: \: \: \:  \text{si n es un numero par}
+    \end{matrix}\right. 
+   (\#eq:median)
+\end{equation}
+
+-   La Moda es una medida de posición que indica el valor que se da con mayor frecuencia en una sucesión de datos. En un conjunto de datos puede haber una moda, más de un moda (multimodal) o puede no haber ninguna moda.
+
+Mediante el cálculo de estas medidas de posición para las variables cuantitativas de la muestra se puede obtener una descripción sencilla y simplificada de los datos.
+En el cuadro  \@ref(tab:tabla1) se puede ver un resumen de estas medidas de posición para las variables de *Edad*, *Horas de Trabajo Semanal* e *Ingreso Total de los individuos*.
+
+```{r include=FALSE}
+cuantitativas<-c('edad','horas_trabajo_semanal','ingreso_total')
+
+posicion<-function(i){
+  c(mean(i),median(i),mfv(i))
+}
+tabla_1<-as.data.frame(sapply(muestra[,cuantitativas],posicion))
+medidas<-as.data.frame(c('Media','Mediana','Moda'))
+tabla_1<- bind_cols(medidas,tabla_1)
+names(tabla_1)<-c('Medidas','Edad','Horas de trabajo semanal','Ingreso total')
+tabla_1<-tabla_1 %>% column_to_rownames(var = 'Medidas')
+tabla_1_<-tabla_1
+tabla_1_$`Ingreso total`<- scales::dollar(round(tabla_1_$`Ingreso total`,digits = 0))
+```
+
+
+```{r tabla1, echo=FALSE}
+tabla_1_ %>% kbl( caption = "Medidas de posición", booktabs = T,align='c') %>%
+kable_styling(latex_options = c("striped", "hold_position")) %>% 
+  column_spec(1,bold = TRUE)
+```
+La media aritmética de la edad de los individuos de la muestra es igual a 41 años, por otro lado, el 50% de los individuos de la muestra tiene 40 años o menos y la edad que es más frecuente entre estos individuos es de 35 años. Estos individuos trabajan en promedio 35 horas semanales, mientras que el 50% de los individuos trabaja 40 horas semanales o menos, al mismo tiempo este es el valor más frecuente de horas semanales trabajadas por los individuos; para una jornada laboral de cinco días por semana esto totaliza una jornada laboral de ocho horas por día ("Jornada Full-time"). Por último, el ingreso total promedio de estos individuos es igual a  \$55,623 por mes, sin embargo, el 50% de estas personas cobra \$46,000 o menos y el salario más frecuente entre estas personas es igual a \$60,000.
+
+## Medidas de variabilidad y asimetría
+
+Anteriormente se presentaron multiples medidas de tendencia central para las variables de *Edad*, *Horas de Trabajo Semanal* e *Ingreso Total de los individuos. La utilidad de cada una de estas, el criterio de selección y sus limitaciones van a estar definidas por la variabilidad y la asimetría que presenten la distribución de los datos.
+
+Tanto la media, la mediana y la moda pueden ser más o menos útiles para describir la tendencia central de los datos dependiendo de si esta distribución tiene una variación muy amplia o si la distribución es más o menos simétrica. Para esto es necesario en primer lugar dar una breve definición de las medidas de variabilidad y de simetría de un conjunto de datos. Una medida de variabilidad es una magnitud que indica el grado de dispersión de los datos, entre ellas las más comunes son la varianza, el desvio estandar y el coeficiente de variación. Una medida de simetría sirve para entender el grado de uniformidad a un lado y al otro del centro de la distribución, mediante esta medida se puede conocer si una una distribución es simétrica o está sesgada hacia la derecha (positivamente) o a la izquierda (negativamente) [@newbold_estadistica_2013].
+
+A continuación se van a definir brevemente las medidas de variabilidad y de simetría que se utilizaron para el análisis descriptivo de la muestra de individuos.
+
+-   Varianza: esta medida de dispersión de los datos nace de la necesidad de poder calcular una desviación promedio de los datos al rededor de la media aritmética y de la limitación que impone la condición de que la suma de los desvios con respecto a la media de los datos es igual a cero. Para poder calcular esta desviación promedio se toma como alternativa realizar el promedio aritmético de las desviaciones con respecto a la media elevados al cuadrado \@ref(eq:var). 
+
+\begin{equation}
+  S^2=\frac{\sum_{i=1}^{n} (X_i-\bar{X})^2}{n} 
+  (\#eq:var)
+\end{equation}
+
+-   Desvio Estandar: la transformación cuadrática que se realiza para el cálculo la varianza es necesaria, no obstante, esta pierde interpretabilidad debido a que brinda una magnitud de dispersión que se encuentra medida en unidades al cuadrado de los datos. El sentido del desvio estandar es poder transformar a la varianza para obtener una medida de dispersión que este representadaen la misma unidad de medida de los datos que la dieron origen, esto se logra calculando la raiz cuadrada de la varianza \@ref(eq:sd).
+
+\begin{equation}
+  S=\sqrt{\frac{\sum_{i=1}^{n} (X_i-\bar{X})^2}{n}} 
+  (\#eq:sd)
+\end{equation}
+
+-   Coeficiente de variación: esta medida, que representa el cociente entre el desvio estandar y la media aritmética \@ref(eq:covar),  se emplea fundamentalmente para comparar la variabilidad realtiva de dos o más grupos de datos.  El coeficiente de variación es muy útil porque no solo permite comparar la variabilidad de dos conjuntos de datos con distintas unidades de media (ej:ingresos y edad), sino que también es útil para comparar datos que tienen distinta media y para ver el grado de utilidad de la media como medida de tendencia central.
+
+\begin{equation}
+  CV=\frac{S_X}{\bar{X}}
+  (\#eq:covar)
+\end{equation}
+
+-   Coeficiente de asimetría de Fisher: este coeficiente se define como el cociente entre el tercer momento en torno a la media y el cubo de la desviación estandar de los datos \@ref(eq:fish). El resultado de esta medida indica si la distribución de los datos tiene una asimetría positiva ($AS>0$) o negativa ($AS<0$), esto permite conocer si los valores se encuentran más lejanos a la media hacia la derecha o hacia la izquierda.
+
+\begin{equation}
+mc_3=\sum_{i=1}^{n}\frac{(X_i-\bar{X})^3 * f_i}{n}
+(\#eq:mc)
+\end{equation}
+
+\begin{equation}
+AS=\frac{mc_3}{S^3_x} 
+(\#eq:fish)
+\end{equation}
+
+En el cuadro  \@ref(tab:tabla2) se puede ver un resumen de estas medidas de dispersión y asimetría para las variables de *Edad*, *Horas de Trabajo Semanal* e *Ingreso Total de los individuos*.
+
+
+
+```{r include=FALSE}
+cuantitativas<-c('edad','horas_trabajo_semanal','ingreso_total')
+
+variabilidad<-function(i){
+  c(var(i),sqrt(var(i)),sqrt(var(i))/mean(i),skewness(i,type=3, na.rm = TRUE))
+}
+tabla_2<-as.data.frame(sapply(muestra[,cuantitativas],variabilidad))
+
+medidas<-as.data.frame(c('Varianza','Desvío Estandar','Coeficiente Variación','Coef. Asimetría Fisher'))
+
+tabla_2<- bind_cols(medidas,tabla_2)
+names(tabla_2)<-c('Medidas','Edad','Horas de trabajo semanal','Ingreso total')
+tabla_2<-tabla_2 %>% column_to_rownames(var = 'Medidas')
+tabla_2_<-tabla_2
+tabla_2_$`Ingreso total`<- formattable::comma(round(tabla_2_$`Ingreso total`,digits = 2))
+tabla_2_$Edad<- formattable::comma(round(tabla_2_$Edad,digits = 2))
+tabla_2_$`Horas de trabajo semanal`<- formattable::comma(round(tabla_2_$`Horas de trabajo semanal`,digits = 2))
+
+
+```
+
+
+```{r tabla2, echo=FALSE}
+tabla_2_ %>% kbl( caption = "Medidas de posición", booktabs = T,align='c') %>%
+kable_styling(latex_options = c("striped", "hold_position")) %>% 
+  column_spec(1,bold = TRUE)
+```
+
+A través del cálculo de estas medidas  de dispersión y asimetría de los datos se puede concluir que los individuos de la muestra tienen una edad que varía, en promedio, 13 años por arriba y 13 años por debajo de los 41 años. Estos mismos individuos tienen una desviación promedio con respecto a la media de horas semanales trabajadas igual a 16 horas semanales mientras que su ingreso mensual varía en promedio al rededor de la media en $51,135.  Las tres variables tienen una asimetría positiva, es decir, que la variabilidad de los datos es mayor hacia la derecha de la media. De estas tres variables, la que mayor variación relativa tiene es la de "Ingreso", en donde su desvio estandar representa el 92% de la media, a su vez, esta es la que mayor asimetría posee en su distribución. La variable con menor dispersión relativa es la edad de los individuos con un coeficiente de variación igual al 32% y la que mayor simetría posee son las horas semanales trabajadas por las personas de la muestra.
+
+La asimetría positiva y la elevada dispersión de la variable *Ingreso total de los individuos* provoca que la utilización de la media aritmética como medida de tendencia central este lejos de ser una decisión óptima para lograr una buena representación del ingreso promedio de los individuos. En estos casos una medida como la mediana del ingreso total sería una mejor opción para resumir cual es el ingreso total promedio de las personas, en relación a que esta medida no esta siendo afectada por los valores extremos de la cola derecha de la distribución del ingreso. En conclusión, la media aritmética estaría estimando un ingreso total promedio mayor al ingreso que es recibido por el 50% de las personas de la muestra.
+
+## Histograma de la distribución
+
+Las medidas de tendencia central, de dispersión y de asimetría son útiles para resumir numéricamente las características de la distribución de las variables de interés. Sin embargo,los histogramas de las distribuciones brindan un método visual mediante el cual se pueden obtener conclusiones muy similares sobre las características de la distribución simplemente con una exploración gráfica.
+
+En el gráfico \@ref(fig:g1) se encuentra el histograma de las variables de *Edad*, *Horas de Trabajo Semanal* e *Ingreso Total de los individuos* junto con sus respectivas medidas de tendencia central. Visualmente las tres variables presentan una distribución asimétrica positiva, siendo horas de trabajo semanal la que mayor grado de simetria presenta en su histograma mientras que el ingreso total es la variable que mayor grado de asimetria expone, a su vez es  la que presenta una mayor cantidad de valores extremos hacia el lado derecho del histograma.
+
+```{r include=FALSE}
+grafico_1_b<-tabla_1 %>% rownames_to_column('medidas') %>% pivot_longer(-medidas)
+grafico_1_a<- muestra[,cuantitativas] %>%  rowid_to_column('id')   %>%  pivot_longer(-id)
+library(ggtext)
+library(ggrepel)
+library(ggpubr)
+
+edad_b<-grafico_1_b %>% filter(name=='Edad')
+edad_a<-grafico_1_a  %>% filter(name=='edad')
+grafico_edad<-edad_a %>% ggplot() + 
+  geom_histogram(aes(x=value),bins=100, fill='LIGHT GRAY') + 
+  geom_vline(data = edad_b,aes(xintercept=value, name=medidas, color=medidas)) + 
+    labs(title='Edad',color='') +
+    scale_color_viridis_d() +
+    xlab('edad')+
+  #geom_label_repel(data= edad_b, aes(x=value,y =.01, label=medidas, angle=90))+ 
+  
+  theme(text=element_text(family="LM Roman 10"), 
+        panel.background = element_blank() , 
+        axis.line = element_line(colour = 'BLACK'), 
+        axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+        plot.title = element_text(hjust = 0.5))
+
+horas_b<-grafico_1_b %>% filter(name=='Horas de trabajo semanal')
+horas_a<-grafico_1_a  %>% filter(name=='horas_trabajo_semanal')
+grafico_horas<-horas_a %>% ggplot() + 
+  geom_histogram(aes(x=value),bins=100, fill='LIGHT GRAY')  + 
+  geom_vline(data = horas_b,aes(xintercept=value, name=medidas, color=medidas)) + 
+    labs(title='Hs. trabajo semanal',color='') +
+    scale_color_viridis_d() +
+    xlab('hs. semanales')+
+  #geom_label_repel(data= edad_b, aes(x=value,y =.01, label=medidas, angle=90))+ 
+  
+  theme(text=element_text(family="LM Roman 10"), 
+        panel.background = element_blank() , 
+        axis.line = element_line(colour = 'BLACK'), 
+        axis.ticks = element_line(colour = 'BLACK'),legend.position = 'left',
+        plot.title = element_text(hjust = 0.5))
+
+ingreso_b<-grafico_1_b %>% filter(name=='Ingreso total')
+ingreso_a<-grafico_1_a  %>% filter(name=='ingreso_total')
+grafico_ingreso<-ingreso_a %>% ggplot() + 
+  geom_histogram(aes(x=value),bins=100, fill='LIGHT GRAY')  + 
+  geom_vline(data = ingreso_b,aes(xintercept=value, name=medidas, color=medidas)) + 
+    labs(title='Ingreso total',color='') +
+    scale_color_viridis_d() +
+    xlab('ingreso')+ scale_x_continuous(labels = scales::dollar_format()) +
+  #geom_label_repel(data= edad_b, aes(x=value,y =.01, label=medidas, angle=90))+ 
+  
+  theme(text=element_text(family="LM Roman 10"), 
+        panel.background = element_blank() , 
+        axis.line = element_line(colour = 'BLACK'), 
+        axis.ticks = element_line(colour = 'BLACK'),legend.position = 'left',
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x.bottom = element_text(size = 7))
+
+```
+```{r g1, fig.cap='Histograma de variables'}
+ggarrange(grafico_horas,grafico_edad,grafico_ingreso, nrow = 1, common.legend = TRUE, legend = 'bottom')
+
+```
+
+
+
+\newpage
+
+# Ejercicio Nº2 - Probabilidad
+
+## Ejercicio 1
+
+-   Problema: Si lanzamos una moneda, ¿Cuál es la probabilidad esperada de obtener una cara?. Si lanzamos una moneda 10 veces, ¿Cuál es la cantidad esperada de caras?
+
+-   Solución: El lanzamiento único de una moneda "equilibrada" es un experimento aleatorio que tiene un espacio muestral igual a S={C,S}. Este experimento tiene dos eventos posibles, exhaustivos y mutuamente excluyentes: obtener una cara o una seca. Bajo estas condiciones, la probabilidad (definición clásica) de que salga una cara en el lanzamiento es igual al cociente de los casos favorables al evento "obtener una cara" sobre la cantidad de eventos posibles, en este caso solo hay dos eventos posibles y un evento favorable, por ello la probabilidad de obtener una cara es igual al 50% \@ref(eq:proba).
+
+\begin{equation}
+  P(cara)=\frac{\text{evento favorable=cara}}{\text{eventos posibles=cara+seca}}=\frac{1}{2}=\text{0.50}
+  (\#eq:proba)
+\end{equation}
+
+En el caso de lanzar 10 veces la moneda, se puede pensar a cada lanzamiento como una distribución de Bernoulli con dos posibles sucesos (sale cara o sale seca) que son mutuamente excluyentes. Al repetir este experimento 10 veces en donde el resultado de cada repetición del experimento es independiente del anterior, se puede definir que la variable aleatoria (lanzamiento de la moneda) sigue una distribución  Binomial de probabilidad \@ref(eq:bino) al ser una generalizacion de la distribución de Bernoulli con multiples repeticiones independientes [@newbold_estadistica_2013]. Esta distribución Binomial tiene un n=10 que resulta de las 10 repeticiones del experimento y un P=0.5 que está dado por la probabilidad de éxito (obtener cara) en cada experimento. 
+
+\begin{equation}
+  X=10 \sim B(n;P)
+  (\#eq:bino)
+\end{equation}
+
+Para conocer la cantidad esperada de veces que sale cara es necesario el cálculo de la esperanza matemática de la distribución  Binomial con 10 ensayos de Bernoulli y una probabilidad de encontrar el atributo en cada ensayo igual a 0.5. Por definición la esperanza de  una distribución Binomial es igual a:
+
+\begin{equation}
+  \mu = \text{E[x]= n*P}
+  (\#eq:bino_2)
+\end{equation}
+
+Reemplazando en la ecuación \@(eq:bino_2) el valor de n=10 y de P=0.5 se obtiene que la cantidad de caras esperadas luego de lanzar una moneda 10 veces es igual a 5 caras.
+
+-   Problema:  Lanzar una moneda 10 veces y contar el número de caras. Repetirlo 8 veces y almacenar el número de caras para cada una. Lanzar una moneda 10 veces, contar el número de caras, almacenar el resultado y repetirlo 1000 veces.  ¿Cómo difieren los resultados del experimento en (2) de los resultados en el experimento (3)? Justificar
+
+-   Solución:
+
+```{r}
+set.seed(1118) #seteo de semilla
+
+posibles<-c(0,1) #Resultados posibles del lanzamiento, en donde seca=0 y cara=1
+
+proba<- c(0.5,0.5) # Probabilidad de obtencion de cada resultado
+
+ # Simulación del lanzamiento de la moneda 10 veces a traves de un sampleo con la probabilidad de obtencion de cada resultado.
+ # con una repetición de 8 veces
+n_rep=8
+n=10
+rep_ocho<-list()
+for (i in 1:n_rep) {
+  data<-as.data.frame(t(matrix(sample(x = posibles,size=10, replace = TRUE,prob = proba))))
+  names(data)<-as.factor(1:10)
+  rep_ocho[[i]]<-data
+}
+
+# Unnest de la base
+rep_ocho<- do.call(rbind,rep_ocho) 
+# Cuenta de caras por cada repeticion
+cantidad_caras_ocho<-rowSums(rep_ocho)
+#Data frame con resultados
+cantidad_caras_ocho<-data.frame(cantidad_ocho=summary(as.factor(cantidad_caras_ocho)))
+cantidad_caras_ocho<-cantidad_caras_ocho %>% mutate(porcentaje_ocho=formattable::percent(cantidad_ocho/sum(cantidad_caras_ocho$cantidad_ocho))) %>% rownames_to_column('Cantidad de caras C/ 10 lanzamientos')
+```
+
+
+```{r echo=TRUE , results='hide'}
+set.seed(1118) #seteo de semilla
+
+posibles<-c(0,1) #Resultados posibles del lanzamiento, en donde seca=0 y cara=1
+
+proba<- c(0.5,0.5) # Probabilidad de obtencion de cada resultado
+
+ # Simulación del lanzamiento de la moneda 10 veces a traves de un sampleo con la probabilidad de obtencion de cada resultado.
+ # con una repetición de 8 veces
+n_rep=1000
+n=10
+rep_mil<-list()
+for (i in 1:n_rep) {
+  data<-as.data.frame(t(matrix(sample(x = posibles,size=10, replace = TRUE,prob = proba))))
+  names(data)<-as.factor(1:10)
+  rep_mil[[i]]<-data
+}
+
+# Unnest de la base
+rep_mil<- do.call(rbind,rep_mil) 
+
+# Cuenta de caras por cada repeticion
+
+cantidad_caras_mil<-rowSums(rep_mil)
+#Data frame con resultados
+
+cantidad_caras_mil<-data.frame(cantidad_1000=summary(as.factor(cantidad_caras_mil)))
+cantidad_caras_mil<- cantidad_caras_mil %>% mutate(porcentaje_1000=formattable::percent(cantidad_1000/sum(cantidad_caras_mil$cantidad_1000))) %>% rownames_to_column('Cantidad de caras C/ 10 lanzamientos')
+
+```
+```{r results='hide'}
+
+#Creacion de distribución pseudo-teorica
+teorica_binom<-rbinom(10000000,10,0.5)
+teorica_binom<-data.frame(cantidad_teorico=summary(as.factor(teorica_binom))) 
+teorica_binom<-teorica_binom %>% mutate(porcentaje_teorico=formattable::percent(cantidad_teorico/sum(teorica_binom$cantidad_teorico))) %>% rownames_to_column('Cantidad de caras C/ 10 lanzamientos')
+
+# Union de bases
+total<- left_join(teorica_binom,cantidad_caras_mil)
+total<-left_join(total,cantidad_caras_ocho)
+total_percent<- total %>% select(`Cantidad de caras C/ 10 lanzamientos`,porcentaje_teorico,porcentaje_1000,porcentaje_ocho) %>% pivot_longer(cols = -'Cantidad de caras C/ 10 lanzamientos',values_transform = TRUE)
+
+total_cant<- total %>% select(`Cantidad de caras C/ 10 lanzamientos`,cantidad_teorico,cantidad_1000,cantidad_ocho) %>% pivot_longer(cols = -'Cantidad de caras C/ 10 lanzamientos',values_transform = TRUE)
+
+# Manipulacion para el grafico
+
+total_cant<-total_cant %>% arrange(`Cantidad de caras C/ 10 lanzamientos`)
+total_cant$`Cantidad de caras C/ 10 lanzamientos`<-as.integer(total_cant$`Cantidad de caras C/ 10 lanzamientos`)
+total_cant<-total_cant %>% mutate(name=case_when(name=='cantidad_1000'~ 'Mil repeticiones',
+                                    name=='cantidad_ocho'~ 'Ocho repeticiones',
+                                    name=='cantidad_teorico'~ 'Distribución teórica'))
+
+ 
+
+```
+
+El concepto de esperanza matemática que se aplico en la pregunta de cuantas caras se esperaría obtener si se tira 10 veces la moneda esta definido como el valor promedio que tomaría una variable aleatoria en un número muy grande de repeticiones de un experimento [@newbold_estadistica_2013]. Cuando solamente hay ocho repeticiones del experimento de tirar 10 veces la moneda el valor más frecuente que se obtuvo es el de 4 caras, sin embargo, cuando se repite el experimento 1,000 veces (un numero grande de repeticiones) el valor más frecuente de veces que salio cara es igual a 5, valor que se condice con la esperanza matemática del experimento aleatorio de lanzar 10 veces una moneda.
+
+En el gráfico \@ref(fig:g2) se denota como la distribución de cantidad de veces que salio cara cuando el experimento se repitio 1,000 es muy similar a la distribución teórica que sigue una binomial con un P=0.5, mientras que la distribución cuando el experimento solo se repitio 8 veces es considerablemente distinta a la distribución teórica.
+
+```{r g2, fig.cap= 'Distribución de veces que salio cara', warning=FALSE, error=FALSE, message=FALSE}
+
+total_cant %>% ggplot() + 
+              geom_col(aes(x=total_cant$`Cantidad de caras C/ 10 lanzamientos`,y= value,fill=name),width = 0.9,show.legend = FALSE)+
+               scale_x_continuous(n.breaks = 11) +
+              scale_fill_manual(values=color)+
+              xlab('Cantidad de veces que salio cara') +
+              ylab('frecuencia')+
+               facet_wrap(~name,scales = 'free_y') +
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'left',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5)
+                )
+              
+```
+
+\newpage
+-   Problema:
+Una persona te propone jugar un juego con dados, el cual te solicita tirar 2 dados:
+*   Si sale un 7, te pagarán $ 3
+*   Si sale un 11, te pagarán $ 5.
+*   Si sale cualquier otra combinación, deberás pagar $ 0.70
+
+1. ¿Cuál es la probabilidad de sacar un siete?
+2. ¿Cuál es la probabilidad de sacar un once?
+3. ¿Cuál es la probabilidad de sacar un siete o un once?
+4. Simular tirar 2 dados mediante la función Roll1Dice(). Simular tirar 2 dados 100 veces y almacenar
+los resultados. Calcular los puntos anteriores (1, 2 y 3) a partir de los datos.
+5. Suponga que jugó 10 veces y obtuvo una ganancia de $ 30. ¡Qué fácil parece ser el juego! ¡Debería
+seguir jugando! ¿Es correcta la suposición? Demostrar con una simulación.
+6. Ahora dicha persona te ofrece disminuir el monto a pagar a $ 0.68. ¿Deberías aceptarlo?
+
+-   Solución:
+
+```{r echo=TRUE,results='hold'}
+#Permutaciones de los resultados posibles de tirar dos dados
+resultados_posibles<-gtools::permutations(n = 6,r = 2,repeats.allowed = TRUE)
+#Distribución de frecuencias de los resultados posibles de tirar dos dados
+resultado_dados<-as.factor(rowSums(resultados_posibles))
+epiDisplay::tab1( x0 =resultado_dados , graph = FALSE)
+
+```
+
+1. La probabilidad de sacar un 7 tirando dos dados es igual a 16.7%.
+
+2. La probabilidad de sacar un 11 es igual a 5.6%.
+
+3. La probabilidad de sacar un 7 o un 11 es igual a  P(dice=7)+P(dice=11)=16.7+5.6= 22.3\%.
+
+4. Simulación de tirar dos dados 100 veces:
+
+```{r}
+Roll1Dice<-function(n=1) {
+  set.seed(1118)
+
+  resultados<-c()
+  dado<-c(1:6)
+  for (i in 1:n) {
+  
+  dadoa<-sample(dado,size = 1, replace = TRUE)  
+  dadob<-sample(dado,size = 1, replace = TRUE)  
+  
+  result<- dadoa+dadob
+  resultados<-c(resultados,result)
+  
+  }
+  return(resultados)
+}
+
+resultado_dados_100_veces<-(Roll1Dice(n=100))
+epiDisplay::tab1( x0 =resultado_dados_100_veces , graph = FALSE)
+```
+A partir de los datos simulados mediante 100 tiradas se puede calcular que la probabilidad de sacar un 7 es igual a 16%, la de sacar un 11 es igual a 5% y la de sacar un 7 o un 11 es igual a 21%.
+
+5. Simulación de ganancias tras tirar el dado unas 10 veces más:
+```{r}
+
+#Simulacion de ganancia de juego (la semilla no debería ir adentro de la funcion pero es necesaria para poder
+#mantener los mismos numeros en este trabajo)
+simulacion_ganancia_juego<-function(n=1) {
+  resultados<-c()
+  gan_perd<-c()
+   result<-Roll1Dice(n=n)
+   for (i in 1:n){
+    re<-if(result[i]==7){3} else if (result[i]==11){5} else {-0.7}
+      gan_perd<-c(gan_perd,re) 
+   }
+   resultados<-gan_perd
+    return(resultados)
+
+  }
+
+```
+
+
+```{r echo=TRUE}
+ganancia_tras_jugar_10_veces<-sum(simulacion_ganancia_juego(n=20))
+ganancia_tras_jugar_10_veces
+```
+Tras jugar 20 veces más, el jugador gano $4.8, el jugador podría seguir jugando siempre y cuando no tenga que pagar ninguna prima para jugar y mientras no tenga un presupuesto que ante la acumulación de perdidas no pueda seguir jugando, esto debido a que la esperanza de la ganancia del juego es positiva e igual a \$0.2371. De hecho, simulando que el jugador tira 10,000 veces el dado, este ganaría \$2,690.4, lo cual es muy cercano al cálculo mediante la esperanza matemática de la ganancia tras jugar 1,000 veces (0.2371*10000) que es igual a \$2371.
+
+
+```{r echo=TRUE}
+esperanza_juego<- (-0.777*0.70)+0.167*3+0.056*5
+print(paste0('Ganancia simulada: ',sum(simulacion_ganancia_juego(10000)), ' Ganancia esperada: ' ,esperanza_juego*10000))
+```
+6. Si la persona decide bajar la perdida ante el evento de sacar cualquier numero distinto a 7 o 11 sería aún mas conveniente  seguir jugando, debido a que la esperanza de la ganancia es mayor.
+
+\newpage
+
+
+# Ejercicio Nº3 - Variables Aleatorias
+
+-   Problema: 
+1. Simular la suma de dos variables normales mediante la función rnorm(x,mu,sigma) en R con media igual a 0 y desvío igual a 1. Probar con el tamaño de muestra n = 10 y n = 100. ¿Qué observa si grafica ambos objetos?
+
+-   Solución:
+
+En el gráfico \@ref(fig:grafo3) se encuentran los histogramas de la suma de las variables. La distribución con el n=100 posee un mayor grado de simetría y es más cercana a la forma de la distribución normal teórica (forma acampanada).
+
+
+```{r echo=TRUE}
+set.seed(1118)
+norm1<- rnorm(10,mean = 0,sd=1)
+norm2<- rnorm(10,mean = 0,sd=1)
+
+norm3<- norm1+norm2
+
+norm4<- rnorm(100,mean = 0,sd=1)
+norm5<- rnorm(100,mean = 0,sd=1)
+
+norm6<-norm4+norm5
+```
+
+
+
+```{r grafo3, fig.cap= 'Histograma de suma de distribuciones normales', warning=FALSE, error=FALSE, message=FALSE }
+ggplot() + geom_histogram(aes(norm3, fill='Normal n=10'),label='Normal 2') + 
+            geom_histogram(aes(norm6,fill='Normal n=100'),  alpha=0.5)  + 
+            scale_fill_manual(values=color) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+                )
+```
+
+
+-   Problema:
+
+2. Simular la suma de dos variables normales mediante la función rnorm(x,mu,sigma) en R con media igual a 0 y desvío igual a 1. Probar con distintos valores de tamaño de muestra. Podría probar con n = 100, n = 1000, n = 10000, n = 100000. Gráficar para estos distintos valores de muestra. Comprobar que la media (valor esperado) es igual a la suma de sus valores esperados y la varianza es igual a la suma de varianzas individuales.
+
+-   Solución:
+En el gráfico \@ref(fig:grafo4) se encuentran los histogramas de la suma de las variables. La distribuciónes ganan un mayor grado de simetría y son cada vez más cercanas a la forma de la distribución normal teórica (forma acampanada) conforme aumenta el n.
+
+
+```{r echo=TRUE}
+set.seed(1118)
+norm1<- rnorm(100,mean = 0,sd=1)
+norm2<- rnorm(100,mean = 0,sd=1)
+
+norm3<- norm1+norm2
+
+norm4<- rnorm(1000,mean = 0,sd=1)
+norm5<- rnorm(1000,mean = 0,sd=1)
+
+norm6<-norm4+norm5
+
+norm7<- rnorm(10000,mean = 0,sd=1)
+norm8<- rnorm(10000,mean = 0,sd=1)
+
+norm9<-norm7+norm8
+
+norm10<- rnorm(100000,mean = 0,sd=1)
+norm11<- rnorm(100000,mean = 0,sd=1)
+
+norm12<-norm10+norm11
+
+```
+
+
+```{r inclide=FALSE}
+g1<-ggplot() + geom_histogram(aes(norm3, fill='Normal n=100')) + 
+            scale_fill_manual(values=color[1]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+              )
+g2<-ggplot() +   geom_histogram(aes(norm6,fill='Normal n=1,000'))  + 
+
+
+            scale_fill_manual(values=color[2]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+                )
+
+g3<-ggplot() + geom_histogram(aes(norm9,fill='Normal n=10,000'))  + 
+
+            scale_fill_manual(values=color[3]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+                )
+
+g4<-ggplot() + geom_histogram(aes(norm12,fill='Normal n=100,000'))  + 
+
+            scale_fill_manual(values=color[4]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+                )
+```
+
+
+```{r grafo4, fig.cap= 'Histograma de suma de distribuciones normales', warning=FALSE, error=FALSE, message=FALSE }
+ggarrange(g1,g2,g3,g4)
+  
+
+
+```
+
+
+Las distribuciones, al ser suma de normales con media igual a 0 y varianza igual a 1 ($1^2$), deberían tener una media igual a la suma de sus medias y una varianza igual a la suma de sus varianzas.
+
+La distribución que surge de la suma de dos normales, independientemente del tamaño del sampleo, deberían tener una media igual a 0 y una varianza igual a 2. A continuación se presentan los resultados obtenidos del cálculo de la media y la varianza calculadas de las distribuciones que surgen de la suma del sampleo para los distintos n.
+
+*    Media suma de distribución normal n=10: -0.02 y Varianza de suma de distribución normal n=10: 2.09.
+*    Media suma de distribución normal n=1,000: -0.04 y Varianza de suma de distribución normal n=1,000: 1.99.
+*    Media suma de distribución normal n=10,000: -0.02 y Varianza de suma de distribución normal n=10,000: 1.99.
+*    Media suma de distribución normal n=100,000: 0 y Varianza de suma de distribución normal n=100,000: 2.
+
+Tanto la media como el desvio estandar tienden a los resultados esperados independientemente del n, sin embargo, cuando el n=100,000 la media y el desvio estandar se estabilizan en los valores esperados redondeando por los dos últimos decimales.
+
+```{r include=FALSE}
+#Media de suma de distribuciones normales con n=100
+paste0('Media suma de distribución normal n=10: ',round(mean(norm3),2),' Varianza de suma de distribución normal n=10: ',round(var(norm3),2))
+
+#Media de suma de distribuciones normales con n=1000
+paste0('Media suma de distribución normal n=1000: ',round(mean(norm6),2),' Varianza de suma de distribución normal n=1000: ',round(var(norm6),2))
+
+#Media de suma de distribuciones normales con n=10000
+paste0('Media suma de distribución normal n=10000: ',round(mean(norm9),2),' Varianza de suma de distribución normal n=10000: ',round(var(norm9),2))
+
+#Media de suma de distribuciones normales con n=100000
+paste0('Media suma de distribución normal n=100000: ',round(mean(norm12),2),' Varianza de suma de distribución normal n=100000: ',round(var(norm12),2))
+
+```
+-   Problema:
+
+3. Simular la suma de diez variables normales mediante la función rnorm en R con media igual a 0 y desvío igual a 1. Probar con distintos valores de tamaño de muestra. Podría probar con n = 100, n = 1000, n = 10000, n = 100000. Gráficar para estos distintos valores de muestra. Comprobar que la media (valor esperado) es igual a la suma de sus valores esperados y la varianza es igual a la suma de varianzas individuales.
+
+-   Solución:
+
+Mientras mayor es el número de  distribuciones normales que se suman, mayor es la variabilidad de la distribución  (gráfico \@ref(fig:grafo5)). Tanto la media como el desvio estandar tienden a los resultados esperados independientemente del n (media=0 y varianza=10):
+
+*   Media suma de distribución normal n=10: 0.54 y la Varianza de suma de distribución normal n=10: 11.23.
+*   Media suma de distribución normal n=1,000: 0.14 y la Varianza de suma de distribución normal n=1,000: 10.47.
+*   Media suma de distribución normal n=10,000: -0.03 y la Varianza de suma de distribución normal n=10,000: 9.98.
+*   Media suma de distribución normal n=100,000: 0.01 y la Varianza de suma de distribución normal n=100,000: 10.02.
+
+
+```{r}
+set.seed(1118)
+n<-c(100,1000,10000,100000)
+norm_1<-c()
+norm_2<-c()
+norm_3<-c()
+norm_4<-c()
+
+
+for (i in 1:10){
+  if (i==1){  norm_1<-rnorm(n=n[1], mean = 0,sd=1)
+              norm_2<-rnorm(n=n[2], mean = 0,sd=1)
+              norm_3<-rnorm(n=n[3], mean = 0,sd=1)
+              norm_4<-rnorm(n=n[4], mean = 0,sd=1)
+  } else {
+  norm_1<-norm_1+rnorm(n=n[1], mean = 0,sd=1)
+  norm_2<-norm_2+rnorm(n=n[2], mean = 0,sd=1)
+  norm_3<-norm_3+rnorm(n=n[3], mean = 0,sd=1)
+  norm_4<-norm_4+rnorm(n=n[4], mean = 0,sd=1)
+    
+  }
+
+
+}
+```
+
+```{r include=FALSE}
+#Media de suma de distribuciones normales con n=100
+paste0('Media suma de distribución normal n=10: ',round(mean(norm_1),2),' Varianza de suma de distribución normal n=10: ',round(var(norm_1),2))
+
+#Media de suma de distribuciones normales con n=1000
+paste0('Media suma de distribución normal n=1000: ',round(mean(norm_2),2),' Varianza de suma de distribución normal n=1000: ',round(var(norm_2),2))
+
+#Media de suma de distribuciones normales con n=10000
+paste0('Media suma de distribución normal n=10000: ',round(mean(norm_3),2),' Varianza de suma de distribución normal n=10000: ',round(var(norm_3),2))
+
+#Media de suma de distribuciones normales con n=100000
+paste0('Media suma de distribución normal n=100000: ',round(mean(norm_4),2),' Varianza de suma de distribución normal n=100000: ',round(var(norm_4),2))
+
+```
+
+
+
+
+```{r include=FALSE}
+g1<-ggplot() + geom_histogram(aes(norm_1, fill='Normal n=100')) + 
+            scale_fill_manual(values=color[1]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+              )
+g2<-ggplot() +   geom_histogram(aes(norm_2,fill='Normal n=1,000'))  + 
+
+
+            scale_fill_manual(values=color[2]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+                )
+
+g3<-ggplot() + geom_histogram(aes(norm_3,fill='Normal n=10,000'))  + 
+
+            scale_fill_manual(values=color[3]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+                )
+
+g4<-ggplot() + geom_histogram(aes(norm_4,fill='Normal n=100,000'))  + 
+
+            scale_fill_manual(values=color[4]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank()
+                )
+```
+
+
+
+```{r grafo5, fig.cap= 'Histograma de suma de diez distribuciones normales', warning=FALSE, error=FALSE, message=FALSE }
+ggarrange(g1,g2,g3,g4)
+  
+```
+
+\newpage
+
+
+# Ejercicio Nº4: Teorema Central del Límite
+
+-Problema:
+
+En clase hemos visto que la media de variables Normales es una Normal. Ahora bien, ¿Ocurrirá lo mismo si las variables que se promedian no son normales?. Se plantea el siguiente ejercicio para que intenten resolver, de forma tal que descubran al Teorema Central del Límite. Repetir el proceso visto en clase mediante R cuando la variable aleatoria original se distribuye de la forma siguiente:
+
+1. Poisson de parámetro lambda = 1.3
+2. Exponencial de parámetro mu = 1.5
+3. Uniforme en el intervalo [5,10]
+4. Weibull de parámetros shape = 1.2 y scale = 0.5
+Realizar un Gráfico de Histograma y plotear la densidad de una variable normal para cada caso.
+
+- Solución
+
+1. Demostración del TCL para una distribución de Poisson de parametro lambda=1.3:
+
+```{r}
+#Primero se crea una funcion que calcula  las medias para el muestreo de la Poisson
+mediaMuestral <- function(n,lambda=1.3){
+  muestra <- rpois(n,lambda)
+  media <- mean(muestra)
+  return(media)
+}
+
+# Ahora se repite el proceso 1,000 veces para tener una distribución de la media de la variable
+#aleatoria que se crea mediante el sampleo de la distribución para distinto tamaño de n:
+
+m <- 100000
+muchasMedias_25 <- replicate(m,mediaMuestral(n=25))
+muchasMedias_50 <- replicate(m,mediaMuestral(n=50))
+muchasMedias_100 <- replicate(m,mediaMuestral(n=100))
+muchasMedias_1000 <- replicate(m,mediaMuestral(n=1000))
+
+# Por último se grafican los histogramas para los distintos tamaños muestrales
+densi<-rnorm( m,mean = mean(muchasMedias_25), sd=sqrt(var(muchasMedias_25)))
+g1<-ggplot() +  geom_density(aes(muchasMedias_25, fill='n=25')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_50), sd=sqrt(var(muchasMedias_50)))
+g2<-ggplot() +  geom_density(aes(muchasMedias_50, fill='n=50')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_100), sd=sqrt(var(muchasMedias_100)))
+g3<-ggplot() +  geom_density(aes(muchasMedias_100, fill='n=100')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_1000), sd=sqrt(var(muchasMedias_1000)))
+g4<-ggplot() +  geom_density(aes(muchasMedias_1000, fill='n=1000')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+```
+
+En el gráfico \@ref(fig:grafo6) se puede ver como la media muestral de una muestra que se extrae de una variable que se distribuye Bernoulli, mientras más grande es el tamaño de la muestra, más tiende a distribuirse como una distribución normal. Como se puede ver, para esta distribución en particular, con un n=1,000 la distribución de las medias es casi identica a la distribución normal con misma media y varianza.
+
+
+```{r grafo6, fig.cap= 'Aproximación al TCL con Distribución Bernoulli', warning=FALSE, error=FALSE, message=FALSE }
+ggarrange(g1,g2,g3,g4)
+  
+```
+
+
+2. Demostración del TCL para una distribución de Exponencial de parametro $\mu$=1.5:
+
+```{r}
+#Primero se crea una funcion que calcula  las medias para el muestreo de la exponencial
+mediaMuestral <- function(n,mu=1.3){
+  muestra <- rexp(n,rate = 1.3)
+  media <- mean(muestra)
+  return(media)
+}
+
+# Ahora se repite el proceso 1,000 veces para tener una distribución de la media de la variable
+#aleatoria que se crea mediante el sampleo de la distribución para distinto tamaño de n:
+
+m <- 100000
+muchasMedias_25 <- replicate(m,mediaMuestral(n=25))
+muchasMedias_50 <- replicate(m,mediaMuestral(n=50))
+muchasMedias_100 <- replicate(m,mediaMuestral(n=100))
+muchasMedias_1000 <- replicate(m,mediaMuestral(n=1000))
+
+# Por último se grafican los histogramas para los distintos tamaños muestrales
+densi<-rnorm( m,mean = mean(muchasMedias_25), sd=sqrt(var(muchasMedias_25)))
+g1<-ggplot() +  geom_density(aes(muchasMedias_25, fill='n=25')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_50), sd=sqrt(var(muchasMedias_50)))
+g2<-ggplot() +  geom_density(aes(muchasMedias_50, fill='n=50')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_100), sd=sqrt(var(muchasMedias_100)))
+g3<-ggplot() +  geom_density(aes(muchasMedias_100, fill='n=100')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_1000), sd=sqrt(var(muchasMedias_1000)))
+g4<-ggplot() +  geom_density(aes(muchasMedias_1000, fill='n=1000')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+```
+En el gráfico \@ref(fig:grafo7) se puede ver como la media muestral de una muestra que se extrae de una variable que se distribuye Exponencial, mientras más grande es el tamaño de la muestra, más tiende a distribuirse como una distribución normal. Como se puede ver, para esta distribución en particular, con un n=1,000 la distribución de las medias es casi identica a la distribución normal con misma media y varianza.
+
+
+```{r grafo7, fig.cap= 'Aproximación al TCL con Distribución Exponencial', warning=FALSE, error=FALSE, message=FALSE }
+ggarrange(g1,g2,g3,g4)
+  
+```
+
+
+3. Demostración del TCL para una distribución de Uniforme en el intervalo [5,10]:
+
+```{r}
+#Primero se crea una funcion que calcula  las medias para el muestreo de la uniforme
+mediaMuestral <- function(n,min=5,max=10){
+  muestra <- runif(n,min=min,max = max)
+  media <- mean(muestra)
+  return(media)
+}
+
+# Ahora se repite el proceso 1,000 veces para tener una distribución de la media de la variable
+#aleatoria que se crea mediante el sampleo de la distribución para distinto tamaño de n:
+
+m <- 100000
+muchasMedias_25 <- replicate(m,mediaMuestral(n=25))
+muchasMedias_50 <- replicate(m,mediaMuestral(n=50))
+muchasMedias_100 <- replicate(m,mediaMuestral(n=100))
+muchasMedias_1000 <- replicate(m,mediaMuestral(n=1000))
+
+# Por último se grafican los histogramas para los distintos tamaños muestrales
+densi<-rnorm( m,mean = mean(muchasMedias_25), sd=sqrt(var(muchasMedias_25)))
+g1<-ggplot() +  geom_density(aes(muchasMedias_25, fill='n=25')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_50), sd=sqrt(var(muchasMedias_50)))
+g2<-ggplot() +  geom_density(aes(muchasMedias_50, fill='n=50')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_100), sd=sqrt(var(muchasMedias_100)))
+g3<-ggplot() +  geom_density(aes(muchasMedias_100, fill='n=100')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_1000), sd=sqrt(var(muchasMedias_1000)))
+g4<-ggplot() +  geom_density(aes(muchasMedias_1000, fill='n=1000')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+```
+
+En el gráfico \@ref(fig:grafo8) se puede ver como la media muestral de una muestra que se extrae de una variable que se distribuye Uniforme, mientras más grande es el tamaño de la muestra, más tiende a distribuirse como una distribución normal. Como se puede ver, para esta distribución en particular, con un n=1,000 la distribución de las medias es casi identica a la distribución normal con misma media y varianza.
+
+
+```{r grafo8, fig.cap= 'Aproximación al TCL con Distribución Exponencial', warning=FALSE, error=FALSE, message=FALSE }
+ggarrange(g1,g2,g3,g4)
+  
+```
+
+
+3. Demostración del TCL para una distribución Weibull de parámetros shape=1.2 y scale=0.5:
+
+```{r}
+#Primero se crea una funcion que calcula  las medias para el muestreo de la Weibull
+mediaMuestral <- function(n,shape=1.2,scale=0.5){
+  muestra <- rweibull(n,shape = shape,scale = scale)
+  media <- mean(muestra)
+  return(media)
+}
+
+# Ahora se repite el proceso 1,000 veces para tener una distribución de la media de la variable
+#aleatoria que se crea mediante el sampleo de la distribución para distinto tamaño de n:
+
+m <- 100000
+muchasMedias_25 <- replicate(m,mediaMuestral(n=25))
+muchasMedias_50 <- replicate(m,mediaMuestral(n=50))
+muchasMedias_100 <- replicate(m,mediaMuestral(n=100))
+muchasMedias_1000 <- replicate(m,mediaMuestral(n=1000))
+
+# Por último se grafican los histogramas para los distintos tamaños muestrales
+densi<-rnorm( m,mean = mean(muchasMedias_25), sd=sqrt(var(muchasMedias_25)))
+g1<-ggplot() +  geom_density(aes(muchasMedias_25, fill='n=25')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_50), sd=sqrt(var(muchasMedias_50)))
+g2<-ggplot() +  geom_density(aes(muchasMedias_50, fill='n=50')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_100), sd=sqrt(var(muchasMedias_100)))
+g3<-ggplot() +  geom_density(aes(muchasMedias_100, fill='n=100')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+densi<-rnorm( m,mean = mean(muchasMedias_1000), sd=sqrt(var(muchasMedias_1000)))
+g4<-ggplot() +  geom_density(aes(muchasMedias_1000, fill='n=1000')) + 
+              geom_density(aes(densi, fill='Normal'), alpha=0.5) +
+              scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+
+```
+
+En el gráfico \@ref(fig:grafo9) se puede ver como la media muestral de una muestra que se extrae de una variable que se distribuye Weibull, mientras más grande es el tamaño de la muestra, más tiende a distribuirse como una distribución normal. Como se puede ver, para esta distribución en particular, con un n=1,000 la distribución de las medias es casi identica a la distribución normal con misma media y varianza.
+
+
+```{r grafo9, fig.cap= 'Aproximación al TCL con Distribución Weibull', warning=FALSE, error=FALSE, message=FALSE }
+ggarrange(g1,g2,g3,g4)
+  
+```
+
+\newpage
+
+# Ejercicio Nº5: Regresión lineal simple
+
+-   Problema:
+
+Realizar los siguientes ejercicios. Interprete todas sus respuestas.
+a) Considerar solamente las observaciones que van desde la 2 hasta la 35 y definir el data frame “datos2a35”. Verificar su tamaño, variables y estructura.
+
+Todas los puntos siguientes resolverlo con el dataset “datos2a35”,
+b) Definir el objeto “Sexo” (género de los estudiantes). Conviértalo en factor y diga cuáles son sus respectivos niveles.
+c) Construir una tabla de frecuencias para la variable Sexo y el diagrama de barras correspondiente.
+d) Determinar la proporción de mujeres.
+e) Mediante el método de la región crítica: Al nivel del 5%, determine si el porcentaje poblacional de mujeres es menor o igual que el 30%. Escribir un resumen del enunciado del problema, verificar los supuestos, concluya, diga cuál es la fórmula, el valor de prueba, el valor crítico, la región crítica e interprete.
+f) Mediante el método del P-valor: Determine si el porcentaje poblacional de mujeres es menor o igual que el 30%. Halle el P-valor, interprete y compare su decisión con el inciso (e).
+g) Realizar la misma prueba del inciso (h) con la función prop.test y compare los resultados obtenidos.
+h) Construir un intervalo del 95% de confianza para la proporción poblacional de mujeres y compare los resultados obtenidos en los incisos anteriores.
+
+```{r echo=FALSE}
+url = "https://github.com/hllinas/DatosPublicos/blob/main/Estudiantes.Rdata?raw=false"
+repmis::source_data(url)
+datos <- Estudiantes 
+
+```
+-   Solución:
+
+a) Definición de dataset "datos2a35" teniendo en cuenta solamente los datos de la observación 2 a la 35:
+
+```{r echo=TRUE}
+datos2a35<- datos %>% filter(Observacion>=2&Observacion<=35)
+
+paste0('Cantidad de observaciones del DF: ', nrow(datos2a35))
+paste0('Cantidad de variables del DF: ', ncol(datos2a35))
+
+```
+
+b) Definición de la variable Sexo como factor con niveles 'Femenino' y 'Masculino':
+
+```{r echo=TRUE}
+#Definición de niveles:
+levels<- c('Femenino','Masculino')
+datos2a35$Sexo<- factor(datos2a35$Sexo,levels = levels)
+
+paste0('Clase de variable Sexo: ', class(datos2a35$Sexo))
+#Cantidad de alumnos por clase
+summary(datos2a35$Sexo)
+```
+
+c) Tabla de frecuencia de la variable "Sexo" en la tabla \@ref(tab:freqtable) y diagrama de barras en el gráfico \@ref(fig:freqsex):
+
+
+```{r echo=TRUE}
+# Tabla de frecuencias:
+sexo<-datos2a35 %>% group_by(Sexo) %>% summarise(cantidad=n())
+```
+
+
+```{r freqtable, echo=FALSE}
+sexo %>% kbl( caption = "Tabla de frecuencias por Sexo", booktabs = T,align='c') %>%
+kable_styling(latex_options = c("striped", "hold_position")) %>% 
+  column_spec(1,bold = TRUE)
+```
+
+
+
+
+```{r freqsex,fig.cap= 'Tabla de frecuencia de la variable Sexo', warning=FALSE, error=FALSE, message=FALSE  }
+
+sexo %>% ggplot(mapping=aes(x=Sexo,y=cantidad, fill=Sexo, label=cantidad)) + 
+                    geom_col(show.legend = FALSE) + 
+                    geom_text(position = position_nudge(y=1)) +
+                    scale_fill_manual(values=color[(1:2)]) +
+              xlab('') +
+              ylab('frecuencia')+
+            
+              theme(text=element_text(family="LM Roman 10"), 
+                panel.background = element_blank() , 
+                axis.line = element_line(colour = 'BLACK'), 
+                axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                plot.title = element_text(hjust = 0.5),
+                axis.text.x = element_text( hjust = 0.5),
+                legend.title  = element_blank())
+```
+
+
+c) La proporción de mujeres se puede ver en la tabla \@ref(tab:propta) y es igual a 58.82\%.
+
+```{r propta}
+sexo<-sexo %>% mutate(proporcion=formattable::percent(cantidad/sum(sexo$cantidad)))
+sexo %>% kbl( caption = "Tabla de frecuencias y proporción por Sexo", booktabs = T,align='c') %>%
+kable_styling(latex_options = c("striped", "hold_position")) %>% 
+  column_spec(1,bold = TRUE)
+```
+
+
+g) La hipotesis nula de que la proporción de las mujeres es menor a 0.30 plantea una prueba en donde se puede realizar un test de proporción para la dsitribución de la base de datos, a continuación se realiza el test de proporciones con una hipótesis alternativa de que el verdadero valor de p (poblacional) es mayor a 0.30.
+```{r}
+x<-20
+n<- 34
+p_test=0.3
+prop.test(x, n, p = p_test, alternative = 'greater', correct = TRUE)
+
+prop.test(x = c(20,14), n=c(34,34),p = c(0.3,0.7))
+```
+Se puede concluir mediante el test que se rechaza la hipótesis nula de que la proporción de mujeres es menor o igual a 0.30, de hecho, con un nivel de confianza del 95\% se puede estimar que el verdadero valor poblacional de la proporción de mujeres se encuentra en el intervalo de p=[0.43,1].
+
+\newpage
+
+# Ejercicio Nº6: Regresión lineal simple
+
+-   Problema: 
+
+Una analista de deportes quiere saber si existe una relación entre la cantidad de bateos que realiza un equipo de béisbol y el número de runs que consigue. En caso de existir y de establecer un modelo, podría predecir el resultado del partido.
+
+
+```{r echo=FALSE}
+equipos <- c("Texas","Boston","Detroit","Kansas","St.","New_S.","New_Y.",
+"Milwaukee","Colorado","Houston","Baltimore","Los_An.","Chicago",
+"Cincinnati","Los_P.","Philadelphia","Chicago","Cleveland","Arizona",
+"Toronto","Minnesota","Florida","Pittsburgh","Oakland","Tampa",
+"Atlanta","Washington","San.F","San.I","Seattle")
+numero_bateos <- c(5659, 5710, 5563, 5672, 5532, 5600, 5518, 5447, 5544, 5598,
+5585, 5436, 5549, 5612, 5513, 5579, 5502, 5509, 5421, 5559,
+5487, 5508, 5421, 5452, 5436, 5528, 5441, 5486, 5417, 5421)
+runs <- c(855, 875, 787, 730, 762, 718, 867, 721, 735, 615, 708, 644, 654, 735,
+667, 713, 654, 704, 731, 743, 619, 625, 610, 645, 707, 641, 624, 570,
+593, 556)
+datos <- data.frame(equipos,numero_bateos,runs)
+```
+Se solicita responder lo siguiente,
+1) Realizar una visualización gráfica que permita determinar la relación entre ambas variables.
+2) Poner a prueba la conjetura de significancia estadística del coeficiente de correlación lineal poblacional entre ambas variables con un nivel de significación del 5%.
+3) Construir un modelo de regresión lineal simple. Identifique la variable respuesta y el regresor del modelo. Interpretar los resultados de los parámetros estimados.
+4) Realizar una estimación por intervalos de confianza para la predicción del modelo obtenido con una confianza del 95\%. Interpretar los resultados.
+5) Incorporar al gráfico del punto 1) el modelo estimado.
+6) Verificar los supuestos del modelo de regresión lineal.
+
+-   Solución:
+1) En el gráfico \@ref(fig:grafo10) se encuentra el gráfico de dispersión entre la cantidad de bateos (variable dependiente) y la cantidad de runs (variable independiente). A nivel gráfico, la variable cantidad de bateos pareciera estar correlacionada positivamente con la variable cantidad de runs. Para aportar aun más a este análisis se agrega una función que, a través de una regresión local polinomial, ajusta una función que relaciona el numero de bateos con la cantidad de runs, y esto aporta aun más evidencia de que la correlación es positiva debido a que la función relaciona positivamente la cantidad de bateos con la cantidad de runs.
+
+```{r grafo10, fig.cap= 'Análisis gráfico de correlación entre cantidad de bateos y runs', warning=FALSE, error=FALSE, message=FALSE }
+datos %>% ggplot(mapping=aes(x=runs, y=numero_bateos)) + 
+                    geom_point() + 
+                    geom_smooth(method = 'loess')+
+                 xlab('Cantidad de runs') +
+                ylab('Cantidad de bateos')+
+              
+                theme(text=element_text(family="LM Roman 10"), 
+                  panel.background = element_blank() , 
+                  axis.line = element_line(colour = 'BLACK'), 
+                  axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                  plot.title = element_text(hjust = 0.5),
+                  axis.text.x = element_text( hjust = 0.5),
+                  legend.title  = element_blank())
+```
+
+
+2) Para probar la significancia estadistica se utiliza un test de correlación  entre muestras pareadas a través del coeficiente de Pearson, este testo tiene como hipotesis nula de que el coeficiente de correlación entre las variables es igual a cero y que la hipotesis alternativa es que el coeficiente de correlación entre las variables no es igual a 0 (existe correlación).
+
+```{r  echo=TRUE}
+# Se realiza el test de correlación
+cor.test(datos$numero_bateos,datos$runs,method = 'pearson',conf.level = 0.95)
+```
+
+El test de correlación indica que hay evidencias suficientes para rechazar la hipóteis nula al 95% de nivel de confianza, es decir, se rechaza la nula de que el coeficiente de correlación lineal de Pearson es igual a 0. Otra información que brinda el test es una estimación puntual del coeficiente de correlación y una estimación por intervalos, el test indica que el coeficiente de correlación  estimado entre estas variables  es igual a 0.61 (correlación positiva), con un nivel de confianza del 95\% la correlación poblacional se encuentra entre 0.32 y 0.79 (rango de valores positivos al 95\% de nivel de confianza).
+
+3) El analista quiere conocer si existe una relación entre la cantidad de bateos y la cantidad de runs en un partido de beisbol, puesto de esta forma lo que intenta es poder estimar la cantidad de bateos mediante una dependencia a la variable de runs que tiene en un partido cada equipo. Para esto se realiza una regresión lineal con la variable cantidad de bateos como regresando (variable dependiente) y la variable cantidad de runs como regresor (variable independiente).
+
+Para el logro de este objetivo se plantea el modelo de regresión lineal entre la cantidad de bateos y la cantidad de runs:
+
+```{r  }
+#Instancio el modelo con los datos
+modelo<-lm(formula = datos$numero_bateos~datos$runs)
+# Resumen del modelo estimado
+summary(modelo)
+```
+
+El modelo indica que existe una relación positiva estadísticamente significativa entre la cantidad de bateos y la cantidad de runs, por cada run que haga un equipo aumenta la cantidad de bateos en 0.59, esto puede no llegar a tener sentido práctico debido a que el numero de bateos es una variable discreta pero este coeficiente servira para calcular las predicciones de la cantidad de bateos con un número especifico de runs. Por otro lado, La variable cantidad de runs explica la variabilidad de la variable cantidad de bateos en un 35% (R cuadrado ajustado), esta métrica podría mejorarse, pero para eso sería necesario obtener más datos que esten relacionados con la cantidad de bateos y que no tengan una alta colinealidad con la variable runs (para evitar la multicolinealidad). 
+
+4) La predicción del número de bateos por intervalos con un 95% de nivel de confianza se realiza a continuación: 
+
+```{r echo=TRUE}
+#Predicción de numero de bateos mediante el modelo con un intervalo de confianza al 95%
+datos_fit<-data.frame(predict(object=modelo, newdata=datos, interval="confidence", level=0.95))
+```
+
+En el gráfico \@ref(fig:grafo11) se encuentra las predicciones de los bateos dependiendo de la cantidad de runs con su respectivo limite superior e inferior al 95% de nivel de confianza.
+
+```{r grafo11, fig.cap= 'Predicciones de bateos por intervalo de confianza', warning=FALSE, error=FALSE, message=FALSE }
+datos_fit %>% ggplot() + geom_line(aes(x=datos$runs,y=fit, color="Predicción puntual")) + 
+                  geom_line(aes(x=datos$runs,y=upr, color="Limite superior al 95% NC")) + 
+                  geom_line(aes(x=datos$runs,y=lwr, color="Limite inferior al 95% NC")) +
+                  geom_point(aes(x=datos$runs,y=datos$numero_bateos)) + 
+                         xlab('Cantidad de runs') +
+                ylab('Cantidad de bateos')+
+              
+                theme(text=element_text(family="LM Roman 10"), 
+                  panel.background = element_blank() , 
+                  axis.line = element_line(colour = 'BLACK'), 
+                  axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                  plot.title = element_text(hjust = 0.5),
+                  axis.text.x = element_text( hjust = 0.5),
+                  legend.title  = element_blank())
+  
+```
+
+
+
+5) En el gráfico \@ref(grafo12) se encuentra la visualización del punto 1 en conjunto con la recta definida por la regresión lineal entre el número de bateos y de runs descripto anteriormente.
+
+
+
+```{r grafo12, fig.cap= 'Gráfico de correlación entre cantidad de bateos, runs y recta de regresión ', warning=FALSE, error=FALSE, message=FALSE }
+datos %>% ggplot(mapping=aes(x=runs, y=numero_bateos)) + 
+                    geom_point() + 
+                    geom_smooth(method = lm, formula = y~x)+
+                 xlab('Cantidad de runs') +
+                ylab('Cantidad de bateos')+
+              
+                theme(text=element_text(family="LM Roman 10"), 
+                  panel.background = element_blank() , 
+                  axis.line = element_line(colour = 'BLACK'), 
+                  axis.ticks = element_line(colour = 'BLACK'),legend.position = 'bottom',
+                  plot.title = element_text(hjust = 0.5),
+                  axis.text.x = element_text( hjust = 0.5),
+                  legend.title  = element_blank())
+```
+
+
+6) A continuación se testean algunos requisitos:
+
+En primer lugar, se testea la linealidad, la distribución normal de los residuos y la media de los residuos igual a 0.
+\newline
+```{r}
+#Linealidad y distribución normal de los residuos con media igual a 0
+#Para demostrar esto se puede realizar un histograma de los residuos y graficar un qqplot.
+hist(modelo$residuals)
+qqnorm(modelo$residuals)
+qqline(modelo$residuals, col = 2)
+#Por ultimo se puede ver la variabilidad de los residuos para conocer si
+# Poseen la misma variabilidad independientemente del valor de X, 
+# es decir, se puede ver si el error es homocedástico
+plot(x=datos$runs,y=modelo$residuals)
+```
+\newline
+
+Los residuos se distribuyen normalmente en torno a 0, sin embargo, la variabilidad de los residuos no parece ser constante e independiente a los valores de x (homocedasticidad).
+
+
+\newpage
+
+# Bibliografía

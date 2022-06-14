@@ -1,0 +1,264 @@
+---
+output:
+    bookdown::pdf_document2: default  
+header-includes: 
+  \usepackage[spanish]{babel}
+  \usepackage{tikz}
+  \usepackage[babel]{csquotes}
+  \renewcommand{\baselinestretch}{1.2}
+  \setlength{\parskip}{2mm}
+fontsize: 11pt
+indent: yes
+bibliography: references.bib
+csl: apa.csl
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+
+```{r include=FALSE}
+library(readr)
+library(tidyverse)
+library(factoextra)
+library(stargazer)
+library(xtable)
+library(extrafont)
+library(eph)
+library(readxl)
+library(formattable)
+library(eph)
+library(modeest)
+library(kableExtra)
+```
+
+---
+output:
+  bookdown::pdf_document2
+  
+header-includes: 
+  \usepackage[spanish]{babel}
+  \usepackage{tikz}
+  \usepackage[babel]{csquotes}
+  \renewcommand{\baselinestretch}{1.2}
+  \setlength{\parskip}{2mm}
+fontsize: 11pt
+indent: yes
+bibliography: references.bib
+csl: apa.csl
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{=tex}
+\begin{titlepage}
+\centering
+\vspace{3cm}
+%%{\bfseries\LARGE Facultad de Ingenier\'ia\par}
+{\scshape\Huge Trabajo final de Estadística \par}
+
+\vspace{1cm}
+{\includegraphics[width=0.7\textwidth]{logo-aus.png}\par}
+{\scshape\Large Maestría en Ciencia de Datos\par}
+\vspace{1.8cm}
+
+\vfill
+
+{\Large Alumno:\\ \textbf{Alejandro Chaín}\par}
+
+{\Large Docentes: \\  \textbf{Rodrigo Del Rosso} \par  \textbf{Ezequiel Nuske}}
+
+
+\vfill
+{\Large 4 de Junio del 2022 \par}
+\end{titlepage}
+\newpage
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dev="cairo_pdf", fig.cap = TRUE)
+library(readr)
+library(tidyverse)
+library(factoextra)
+library(stargazer)
+library(xtable)
+library(extrafont)
+library(eph)
+library(readxl)
+library(formattable)
+library(eph)
+library(modeest)
+library(kableExtra)
+
+#paleta de colores
+color<- c('#e41a1c','#377eb8','#4daf4a','#a6cee3','#4575b4','#f781bf','#a65628','#ffff33','#984ea3','#ff7f00','#f781bf')
+extrafont::font_import(prompt = FALSE)
+extrafont::loadfonts(device = "pdf",quiet = T)
+```
+
+# Introducción
+
+El presente trabajo práctico se encuadra dentro del programa de la matería de Estadística de la maestría en Ciencia de Datos de la Facultad de Ingeniería de la Universidad Austral.
+El objetivo de este trabajo es la aplicación de los conceptos teóricos y prácticos desarrollados durante la cursada de la materia.
+
+# Ejercicio Nº1 - Estadística Descriptiva
+
+Para el abordaje de este punto se utiliza como base de datos a la Encuesta Permanente de Hogares a nivel de individuos correspondiente al cuarto trimestre de 2021, esta encuesta es relevada por el instituto de estadísticas y Censo (INDEC), tiene una frecuencia trimestral y cubre 31 aglomerados urbanos y un área urbano-rural.
+
+Para la descarga de esta base de datos se emplea la biblioteca de EPH [@kozlowski2020].
+La población que se tomará en cuenta serán todos los individuos encuestados que se encuentren con una condición de actividad de "Ocupados" y que hayan declarado haber recibido algun tipo de ingreso laboral.
+En total, esta población consta de 17,243 individuos de los cuales se tomará una muestra de 1.000 individuos de manera aleatoria, sin reposición y asignandole a cada individuo de la población la misma probabilidad de ser seleccionado (distribución uniforme de probabilidad).
+
+```{r include=TRUE, echo=FALSE, warning=FALSE, error=FALSE, results='hide'}
+# En primer lugar se descargan los microdatos de la EPH a nivel individual del cuarto trimestre de 2021, considerando solamente algunas variables de interés.
+baseeph<-  get_microdata(year = 2021,trimester = 4,type = 'individual',vars =c('CODUSU','NRO_HOGAR','REGION','AGLOMERADO','CH04','CH14','CH12', 'CH13','CH06','PP04D_COD','P21','P47T','IPCF','PP08J1','PP04D_COD','ESTADO','PP3E_TOT','PP3F_TOT','NIVEL_ED','CH03'))
+# En segundo lugar, se realiza un filtrado por condición de "No respuesta" y se efectua un "Feature Engineering" básico mediante el cual se generan nuevas variables.
+baseeph <- baseeph %>%filter(ESTADO!=0)  %>%    mutate(
+                      Sexo=as.character(CH04),
+                      Sexo=case_when(Sexo=="1" ~ "Hombres",
+                                       Sexo=="2" ~ "Mujeres"),
+                      CH14=as.numeric(CH14),
+                      añoalc=case_when(CH14 %in% c(98,99)~ NaN ,
+                                           TRUE ~ CH14),
+                      aeduc=case_when(CH12==1 ~ 0,
+                                              CH12==2 & CH13==2~añoalc,
+                                              CH12==2 & CH13==1 ~ 6,
+                                              CH12==3 & CH13==2 ~ añoalc,
+                                              CH12==3 & CH13==1 ~ 9,
+                                              CH12==4 & CH13==2 ~ 6+añoalc,
+                                              CH12==4 & CH13==1 ~ 12,
+                                              CH12==5 & CH13==2 ~ 9+añoalc,
+                                              CH12==5 & CH13==1 ~ 12,
+                                              CH12 %in% c(6,7) & CH13==2 ~ 12+añoalc,
+                                              CH12==6 & CH13==1 ~ 16,
+                                              CH12==7 & CH13==1 ~ 17,
+                                              CH12==8 & CH13==2 ~ 17+añoalc,
+                                              CH12==8 & CH13==1 ~ 21),
+                       edad=case_when(CH06>=18 & CH06<29 ~ "18 a 28",
+                                     CH06>=29 & CH06<40 ~ "29 a 39",
+                                     CH06>=40 & CH06<51 ~ "40 a 50",
+                                     CH06>=51 & CH06<62 ~ "51 a 61",
+                                     CH06>=61 ~ "61+"),
+                        PP04D_COD = case_when(nchar(PP04D_COD) == 5 ~ PP04D_COD,
+                                              nchar(PP04D_COD) == 4 ~ paste0("0", PP04D_COD),
+                                              nchar(PP04D_COD) == 3 ~ paste0("00", PP04D_COD),
+                                              nchar(PP04D_COD) == 2 ~ paste0("000", PP04D_COD),
+                                              nchar(PP04D_COD) == 1 ~ paste0("0000", PP04D_COD)),
+                        CALIFICACION = substr(PP04D_COD, 5, 5),
+                      P21= P21 - PP08J1,
+                      
+                        JERARQUIA = substr(PP04D_COD, 3, 3),
+                        JERARQUIA = case_when(JERARQUIA=="0" ~ "Dirección",
+                                              JERARQUIA=="2" ~ "Jefes",
+                                              JERARQUIA=="1" ~ "Cuentapropia",
+                                              JERARQUIA=="3" ~ "Trabajadores\nAsalariados"),
+                        JERARQUIA = factor(JERARQUIA, c("Dirección", "Jefes", "Trabajadores\nAsalariados", "Cuentapropia")),
+                        PEA= case_when(ESTADO==3 ~ 0,
+                                       ESTADO==4 ~ 0,
+                                       ESTADO==1 ~ 1,
+                                       ESTADO==2 ~ 1),
+                        PP04D_COD = as.character(PP04D_COD),
+    
+                        CALIFICACION = case_when(CALIFICACION=="1" ~ "Profesionales",
+                                                   CALIFICACION=="2" ~ "Técnicos",
+                                                   CALIFICACION=="3" ~ "Operativos",
+                                                   CALIFICACION=="4" ~ "No Calificados",
+                                                    TRUE ~ "No Calificados" ),
+                        CALIFICACION = factor(CALIFICACION, c("No Calificados", "Operativos", "Técnicos", "Profesionales")),
+                          HORASSEM=PP3E_TOT+PP3F_TOT,
+                          niveled=case_when(NIVEL_ED==1 | NIVEL_ED==7 ~ "Sin\ninstrucción",
+                                            NIVEL_ED %in% c(2,3) ~ "Primario\nCompleto",
+                                            NIVEL_ED %in% c(4,5)~ "Secundario\nCompleto",
+                                            NIVEL_ED == 6 ~ "Superior/Universitario\ncompleto"),
+                          niveled=factor(niveled, levels = c("Sin\ninstrucción","Primario\nCompleto","Secundario\nCompleto","Superior/Universitario\ncompleto")),
+                        JEFE = case_when(CH03==1 ~ 1,
+                                         CH03 %in% c(2,3,4,5,6,7,8,9,10) ~ 0))
+```
+
+```{r include=TRUE, echo=FALSE, warning=FALSE, error=FALSE, results='hide'}
+# En este bloque se filtra de toda la encuesta a los individuos que poseen una condición de "Ocupados" y que declararon haber recibido algún tipo de ingreso laboral, por último se seleccionan las variables que se van a utilizar en el posterior análisis.
+baseeph<-baseeph %>% 
+         filter(ESTADO==1 & !(P21 %in%c(-9,0)) & P47T!=-9) %>% 
+         mutate(ID = row_number())  %>% 
+         select(ID,edad=CH06,sexo=Sexo,horas_trabajo_semanal=HORASSEM,calificacion=CALIFICACION,nivel_educativo=niveled,ingreso_total=P47T)
+```
+
+```{r include=TRUE, echo=FALSE, warning=FALSE, error=FALSE, results='hide'}
+# Para la selección de la muestra de 1,000 individuos, se realiza un sampleo de tamaño n=1,000 de una distribución uniforme discreta con un rango  [1,17243], el cual coincide con el rango de la variable "ID" que identifica a los individuos de la población.
+set.seed(118)
+indice_aleatorio<- rdunif(n=1000, min(baseeph$ID),max(baseeph$ID))
+muestra<- baseeph[indice_aleatorio,]
+```
+
+Las variables que se tienen en cuenta para este análisis son tanto del tipo cuantitativo como cualitativo, a continuación se realiza una breve descripción de las mismas.
+
+**Variables Cualitativas:**
+
+-   Sexo: Esta variable indica si el individuo es Hombre o Mujer.
+
+-   Calificación: Esta variable indica el nivel de calificación del individuo, esta variable puede ser "No calificados", "Operativos", "Técnicos" o "Profesionales".
+
+-   Nivel educativo: Esta variable indica el nivel educativo alcanzado por el individuo, este puede ser "Sin instrucción", "Primario Completo", "Secundario Completo" o "Superior Universitario Completo",
+
+**Variables Cuantitativas:**
+
+-   Edad: Esta variable numérica discreta indica la edad del individuo al momento del relevamiento.
+
+-   Horas de trabajo semanal: Esta variable numérica indica la cantidad de horas semanales que trabajo el individuo en su ocupación laboral.
+
+-   Ingreso total: Esta variable numérica discreta indica el ingreso total mensual en pesos que recibió la persona, este está compuesto por el ingreso laboral proveniente del desarrollo de su ocupación sumado a los ingresos no laborales percibidos.
+
+Para realizar un análisis estadístico descriptivo desde un enfoque general de la muestra se pueden analizar tanto medidas de tendencia central, de variabilidad, de sesgo y de curtósis [@chao_estadisticas_1993] de las variables cuantitativas de los individuos muestreados.
+
+## Medidas de tendencia central
+
+Una medida de tendencia central es aquel número que se toma como orientación para referirnos a un conjuto de datos.
+Dentro de las medidas de tendencia central, también conocidas como medidas de posición, se pueden encontrar:
+
+-   La Media aritmética \@ref(eq:mean), esta medida de posición es la que cuenta con mayor popularidad, esta medida calcula el centro físico del conjunto de datos y esta definida como la suma de los valores observados de una variable dividido por el total de observaciones.
+
+\begin{equation}
+  \bar{X}=\frac{\sum_{i=1}^{n} X_i}{n} 
+  (\#eq:mean)
+\end{equation}
+
+-   La Mediana \@ref(eq:median), esta medida de posición indica el valor que divide un conjunto de observaciones ordenadas respecto de la magnitud de los valores, de tal manera que el número de datos por encima de la mediana sea igual al número de datos por debajo de la misma.
+
+\begin{equation}
+   X_m=\left\{\begin{matrix}X_{(\frac{n+1}{2})} \: \: \: \: \: \:\: \: \: \:\: \:\: \:\: \:\text{si     n es un numero impar}
+    &  \\
+    &  \\
+    \frac{X_{(\frac{n}{2})}+X_{(\frac{n}{2})+1}}{2}\: \: \: \:  \text{si n es un numero par}
+    \end{matrix}\right. 
+   (\#eq:median)
+\end{equation}
+
+-   La Moda es una medida de posición que indica el valor que se da con mayor frecuencia en una sucesión de datos. En un conjunto de datos puede haber una moda, más de un moda (multimodal) o puede no haber ninguna moda.
+
+Mediante el cálculo de estas medidas de posición para las variables cualitativas de la muestra se puede obtener una descripción sencilla y simplificada de los datos.
+En el cuadro se puede ver un resumen de estas medidas de posición para las variables de *Edad*, *Años de Educación*, *Horas de Trabajo Semanal* e *Ingreso Total de los individuos*.
+
+```{r }
+cuantitativas<-c('edad','horas_trabajo_semanal','ingreso_total')
+
+posicion<-function(i){
+  c(mean(i),median(i),mfv(i))
+}
+tabla_1<-as.data.frame(sapply(muestra[,cuantitativas],posicion))
+medidas<-as.data.frame(c('Media','Mediana','Moda'))
+tabla_1<- bind_cols(medidas,tabla_1)
+names(tabla_1)<-c('Medidas','Edad','Horas de trabajo semanal','Ingreso total')
+tabla_1<-tabla_1 %>% column_to_rownames(var = 'Medidas')
+
+tabla_1 %>% kbl( caption = "Medidas de posición", booktabs = T,align='c') %>%
+kable_styling(latex_options = c("striped", "hold_position")) %>% 
+  column_spec(1,bold = TRUE)
+```
+
+```{r include=FALSE}
+iris %>% ggplot(mapping=aes(x=Sepal.Length, fill=Species)) + geom_histogram() + facet_wrap(facets = ~Species, ncol = 1)+ scale_fill_manual(values=color)+ theme(text=element_text(family="LM Roman 10"), panel.background = element_blank() , axis.text = element_blank(), axis.ticks = element_blank())
+```
+
+\newpage
+
+# Bibliografía
